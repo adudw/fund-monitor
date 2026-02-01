@@ -3,41 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>基金实时看板 Pro</title>
+    <title>基金估值看板</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .up { color: #ef4444; }
         .down { color: #22c55e; }
-        /* 隐藏滚动条 */
+        /* 隐藏滚动条但保留功能 */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 antialiased">
-    <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-24 relative">
+<body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-100">
+    <div class="max-w-md mx-auto md:max-w-4xl min-h-screen pb-24 relative">
         
-        <header class="bg-white/85 backdrop-blur-md border-b border-slate-200 sticky top-0 z-20 px-4 py-3 md:px-6 md:py-4 transition-all">
+        <header class="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-20 px-4 py-3 md:px-6 md:py-4 transition-all duration-200">
             <div class="flex flex-col gap-3">
                 <div class="flex justify-between items-center">
-                    <h1 class="text-lg font-bold tracking-tight text-slate-800 flex items-center gap-2">
-                        自选基金
-                        <span id="updateTime" class="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">初始化...</span>
-                    </h1>
+                    <div>
+                        <h1 class="text-lg font-bold tracking-tight text-slate-800 flex items-center gap-2">
+                            我的基金
+                            <span id="updateTime" class="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">等待更新</span>
+                        </h1>
+                    </div>
                     
                     <div class="flex items-center gap-2">
-                         <button onclick="toggleSortMode()" id="sortToggleBtn" class="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 active:scale-95 transition flex items-center gap-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
-                            <span class="text-xs font-medium hidden md:inline">排序</span>
+                         <button onclick="toggleSortMode()" id="sortToggleBtn" class="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 active:scale-95 transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
                         </button>
                         <button onclick="manualRefresh()" class="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 active:rotate-180 transition duration-500">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         </button>
                     </div>
                 </div>
 
-                <div class="flex gap-2" id="inputArea">
+                <div class="flex gap-2 transition-all" id="inputArea">
                     <input type="number" id="fundInput" inputmode="numeric" placeholder="输入代码 (如 005562)" 
-                           class="flex-1 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 px-4 py-2 rounded-xl outline-none text-sm transition-all shadow-inner">
+                           class="flex-1 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 px-4 py-2.5 rounded-xl outline-none text-sm transition-all">
                     <button onclick="addFund()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl font-medium text-sm shadow-sm active:scale-95 transition">
                         添加
                     </button>
@@ -45,40 +46,33 @@
             </div>
         </header>
 
-        <main class="p-2 md:p-6">
+        <main class="p-3 md:p-6">
             <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <table class="w-full">
-                    <thead class="bg-slate-50/80 border-b border-slate-100 text-[11px] md:text-xs text-slate-400 font-medium">
+                    <thead class="bg-slate-50/50 border-b border-slate-100 text-xs text-slate-400 font-medium">
                         <tr>
-                            <th class="py-3 px-3 md:px-4 text-left cursor-pointer active:bg-slate-100 transition w-[35%] md:w-auto" onclick="trySort('code')">
+                            <th class="py-3 px-4 text-left w-[40%] cursor-pointer select-none active:bg-slate-100 transition" onclick="trySort('code')">
                                 <div class="flex items-center gap-1">
-                                    名称
-                                    <span class="sort-icon opacity-0 text-blue-500">▼</span>
+                                    名称/代码
+                                    <span class="sort-icon opacity-0 transition-opacity text-blue-500">▼</span>
                                 </div>
                             </th>
                             
-                            <th class="hidden md:table-cell py-3 px-2 text-right cursor-pointer active:bg-slate-100 transition" onclick="trySort('dwjz')">
+                            <th class="py-3 px-2 text-right cursor-pointer select-none active:bg-slate-100 transition" onclick="trySort('gsz')">
                                 <div class="flex items-center justify-end gap-1">
-                                    <span class="sort-icon opacity-0 text-blue-500">▼</span>
-                                    昨日净值
+                                    <span class="sort-icon opacity-0 transition-opacity text-blue-500">▼</span>
+                                    估值
                                 </div>
                             </th>
 
-                            <th class="py-3 px-2 text-right cursor-pointer active:bg-slate-100 transition" onclick="trySort('gsz')">
+                            <th class="py-3 px-4 text-right cursor-pointer select-none active:bg-slate-100 transition" onclick="trySort('gszzl')">
                                 <div class="flex items-center justify-end gap-1">
-                                    <span class="sort-icon opacity-0 text-blue-500">▼</span>
-                                    实时估值
-                                </div>
-                            </th>
-
-                            <th class="py-3 px-3 md:px-4 text-right cursor-pointer active:bg-slate-100 transition" onclick="trySort('gszzl')">
-                                <div class="flex items-center justify-end gap-1">
-                                    <span class="sort-icon opacity-0 text-blue-500">▼</span>
-                                    板块涨幅
+                                    <span class="sort-icon opacity-0 transition-opacity text-blue-500">▼</span>
+                                    涨跌
                                 </div>
                             </th>
                             
-                            <th class="w-8 md:w-12"></th>
+                            <th class="py-3 px-2 text-center w-10"></th>
                         </tr>
                     </thead>
                     <tbody id="fund-table" class="divide-y divide-slate-50">
@@ -86,29 +80,38 @@
                 </table>
                 
                 <div id="emptyState" class="hidden py-16 text-center">
-                    <p class="text-slate-400 text-sm">暂无自选，输入代码添加</p>
+                    <div class="inline-flex bg-slate-50 p-4 rounded-full mb-3">
+                        <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    </div>
+                    <p class="text-slate-400 text-sm">暂无自选基金</p>
                 </div>
             </div>
             
-            <p class="text-center text-[10px] text-slate-300 mt-6 md:mt-8">
-                * 估值仅供参考，实际以基金公司净值为准
+            <p class="text-center text-[10px] text-slate-300 mt-6">
+                * 点击右上角排序按钮开启排序功能<br>
+                数据来源：天天基金 · 仅供技术交流
             </p>
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v4';
-        const DEFAULT_FUNDS = ['005562', '000217', '015790'];
+        const STORAGE_KEY = 'my_fund_v3';
+        // 你的默认基金
+        const DEFAULT_FUNDS = ['005562', '000217'];
         
         let fundList = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_FUNDS;
         let results = {};
-        let isSortMode = false;
+        let isSortMode = false; // 是否处于排序模式
 
+        // JSONP 回调
         window.jsonpgz = function(data) {
             results[data.fundcode] = data;
+            // 每次获取单个数据不立即渲染，等待全部或定时器触发，避免抖动。
+            // 但为了响应速度，这里采用防抖渲染
             debouncedRender();
         };
 
+        // 防抖渲染：防止短时间内多次渲染
         let renderTimer;
         function debouncedRender() {
             clearTimeout(renderTimer);
@@ -118,6 +121,7 @@
         function fetchFund(code) {
             const script = document.createElement('script');
             script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+            script.onerror = () => { console.log('Load failed for', code); };
             document.body.appendChild(script);
             setTimeout(() => { script.remove(); }, 2000); 
         }
@@ -130,27 +134,34 @@
         }
 
         function fetchAll() {
-            if (fundList.length === 0) { renderTable(); return; }
+            if (fundList.length === 0) {
+                renderTable();
+                return;
+            }
             fundList.forEach(code => fetchFund(code));
             document.getElementById('updateTime').innerText = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ' 更新';
         }
+
+        // --- 核心业务逻辑 ---
 
         function addFund() {
             const input = document.getElementById('fundInput');
             const code = input.value.trim();
             if (/^\d{6}$/.test(code)) {
                 if (!fundList.includes(code)) {
-                    fundList.unshift(code);
+                    fundList.unshift(code); // 新增的放最前
                     saveList();
-                    fetchFund(code);
+                    fetchFund(code); // 立即获取这个新基金的数据
                     input.value = '';
                     input.blur();
-                } else { alert('列表已存在该基金'); }
+                } else {
+                    alert('该基金已存在');
+                }
             }
         }
 
         function removeFund(code) {
-            if(confirm('移除该基金？')) {
+            if(confirm('确定删除吗？')) {
                 fundList = fundList.filter(item => item !== code);
                 delete results[code];
                 saveList();
@@ -158,6 +169,7 @@
             }
         }
 
+        // 切换排序模式
         function toggleSortMode() {
             isSortMode = !isSortMode;
             const btn = document.getElementById('sortToggleBtn');
@@ -165,41 +177,60 @@
             
             if (isSortMode) {
                 btn.classList.add('bg-blue-100', 'text-blue-600');
-                icons.forEach(el => el.classList.remove('opacity-0'));
+                icons.forEach(el => el.classList.remove('opacity-0')); // 显示箭头占位
+                alert('已进入排序模式：点击表头文字即可对列表进行重新排序并保存。');
             } else {
                 btn.classList.remove('bg-blue-100', 'text-blue-600');
                 icons.forEach(el => el.classList.add('opacity-0'));
             }
         }
 
+        // 执行排序
         function trySort(key) {
             if (!isSortMode) return;
+            
+            // 简单的降序排序（第一次点降序，第二次可以做升序，这里简化为降序优先，因为通常看涨幅高的）
+            // 如果需要切换顺序，可以引入一个 sortDirection 变量，这里为了简洁默认 Desc
             
             fundList.sort((a, b) => {
                 const dataA = results[a];
                 const dataB = results[b];
-                if (!dataA) return 1; if (!dataB) return -1;
+                
+                // 如果数据还没加载出来，沉底
+                if (!dataA) return 1;
+                if (!dataB) return -1;
 
                 let valA, valB;
-                if (key === 'gszzl') { // 板块涨幅
-                    valA = parseFloat(dataA.gszzl); valB = parseFloat(dataB.gszzl);
-                } else if (key === 'gsz') { // 实时估值
-                    valA = parseFloat(dataA.gsz); valB = parseFloat(dataB.gsz);
-                } else if (key === 'dwjz') { // 昨日净值
-                    valA = parseFloat(dataA.dwjz); valB = parseFloat(dataB.dwjz);
-                } else { // 代码
-                    valA = parseInt(dataA.fundcode); valB = parseInt(dataB.fundcode);
+
+                if (key === 'gszzl') { // 涨跌幅
+                    valA = parseFloat(dataA.gszzl);
+                    valB = parseFloat(dataB.gszzl);
+                } else if (key === 'gsz') { // 估值
+                    valA = parseFloat(dataA.gsz);
+                    valB = parseFloat(dataB.gsz);
+                } else if (key === 'code') { // 代码/名称 (用代码排)
+                    valA = parseInt(dataA.fundcode);
+                    valB = parseInt(dataB.fundcode);
                 }
-                return valB - valA; // 默认降序
+
+                return valB - valA; // 降序: 大的在前
             });
 
-            saveList();
+            saveList(); // 保存排序结果！
             renderTable();
+            
+            // 排序后自动退出排序模式，或者保持？为了体验好，保持开启，直到用户手动关
+            // 这里给个反馈
+            const headerText = key === 'gszzl' ? '涨幅' : (key === 'gsz' ? '估值' : '代码');
+            // 小提示
+            console.log(`已按 ${headerText} 排序`);
         }
 
         function saveList() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(fundList));
         }
+
+        // --- 渲染逻辑 ---
 
         function renderTable() {
             const tbody = document.getElementById('fund-table');
@@ -214,12 +245,12 @@
             
             const html = fundList.map(code => {
                 const data = results[code];
+                // 骨架屏效果（无数据时）
                 if (!data) return `
                     <tr class="animate-pulse">
-                        <td class="py-4 px-3"><div class="h-4 bg-slate-200 rounded w-16"></div></td>
-                        <td class="hidden md:table-cell"><div class="h-4 bg-slate-200 rounded w-12 ml-auto"></div></td>
-                        <td class="px-2"><div class="h-4 bg-slate-200 rounded w-12 ml-auto"></div></td>
-                        <td class="px-3"><div class="h-6 bg-slate-200 rounded w-14 ml-auto"></div></td>
+                        <td class="py-4 px-4"><div class="h-4 bg-slate-200 rounded w-24 mb-1"></div><div class="h-3 bg-slate-100 rounded w-12"></div></td>
+                        <td class="py-4 px-2 text-right"><div class="h-4 bg-slate-200 rounded w-12 ml-auto"></div></td>
+                        <td class="py-4 px-4 text-right"><div class="h-6 bg-slate-200 rounded w-16 ml-auto"></div></td>
                         <td></td>
                     </tr>`;
 
@@ -231,37 +262,29 @@
 
                 return `
                     <tr class="group active:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
-                        <td class="py-3 px-3 md:px-4 align-top">
-                            <div class="text-[13px] md:text-sm font-bold text-slate-700 leading-snug whitespace-normal line-clamp-2 mb-0.5">
+                        <td class="py-3 px-4 align-top">
+                            <div class="text-sm font-bold text-slate-700 leading-tight whitespace-normal line-clamp-2 mb-1">
                                 ${data.name}
                             </div>
-                            <div class="text-[10px] text-slate-400 font-mono">
+                            <div class="text-[10px] text-slate-400 font-mono tracking-wide">
                                 ${data.fundcode}
                             </div>
                         </td>
                         
-                        <td class="hidden md:table-cell py-3 px-2 text-right align-top">
-                            <div class="text-sm font-mono text-slate-600">${data.dwjz}</div>
-                            <div class="text-[10px] text-slate-300">昨天</div>
-                        </td>
-
                         <td class="py-3 px-2 text-right align-top">
-                            <div class="text-[13px] md:text-sm font-bold font-mono ${colorClass}">${data.gsz}</div>
-                            <div class="md:hidden text-[10px] text-slate-400 font-mono mt-0.5 scale-95 origin-right">
-                                昨 <span class="text-slate-500">${data.dwjz}</span>
-                            </div>
-                            <div class="hidden md:block text-[10px] text-slate-300">
+                            <div class="text-sm font-bold font-mono ${colorClass}">${data.gsz}</div>
+                            <div class="text-[10px] text-slate-300 md:hidden scale-90 origin-right">
                                 ${data.gztime.split(' ')[1]}
                             </div>
                         </td>
                         
-                        <td class="py-3 px-3 md:px-4 text-right align-top">
-                            <span class="inline-flex items-center justify-center min-w-[58px] px-1.5 py-1.5 rounded-lg text-[11px] md:text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">
+                        <td class="py-3 px-4 text-right align-top">
+                            <span class="inline-flex items-center justify-center min-w-[64px] px-2 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">
                                 ${sign}${data.gszzl}%
                             </span>
                         </td>
 
-                        <td class="py-3 px-1 text-center align-middle">
+                        <td class="py-3 px-2 text-center align-middle">
                             <button onclick="removeFund('${data.fundcode}')" class="opacity-20 group-hover:opacity-100 transition p-2 text-slate-400 hover:text-red-500">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
@@ -273,8 +296,9 @@
             tbody.innerHTML = html;
         }
 
+        // 初始化
         fetchAll();
-        setInterval(fetchAll, 60000);
+        setInterval(fetchAll, 60000); // 1分钟轮询
     </script>
 </body>
 </html>
