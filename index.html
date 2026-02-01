@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>自研估值看板 V9</title>
+    <title>自研看板 V9.2 (智能版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .up { color: #ef4444; }
@@ -20,7 +20,7 @@
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-mono">V9.0 混合引擎</span>
+                    <span id="globalStatus" class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">V9.2 Smart</span>
                 </div>
                 <button onclick="refreshAll()" class="p-2 bg-slate-100 rounded-lg active:bg-slate-200 transition">
                     <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -38,7 +38,7 @@
                 <table class="w-full">
                     <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 font-medium">
                         <tr>
-                            <th class="py-3 px-3 text-left w-[30%]">名称</th>
+                            <th class="py-3 px-3 text-left w-[32%]">名称</th>
                             <th class="py-3 px-2 text-right">净值</th>
                             <th class="py-3 px-2 text-right">估值</th>
                             <th class="py-3 px-3 text-right">涨跌</th>
@@ -50,23 +50,35 @@
                 <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">暂无数据，请添加基金代码</div>
             </div>
             <p class="text-center text-[10px] text-slate-300 mt-6 px-4">
-                净值:官方确认 | 估值: ⚡重仓自研 / ⚓ETF锚定
+                官方净值(K线) | 实时估值(ETF/自研重仓)
             </p>
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v9';
+        const STORAGE_KEY = 'my_fund_v9_2';
         const DEFAULT_DB = [
-            { code: '005827', proxy: '' },       // 易方达蓝筹 (走自研估值)
-            { code: '000217', proxy: 'sh518880' } // 华安黄金 (走ETF锚定)
+            { code: '005827', proxy: '' },       // 易方达蓝筹
+            { code: '000217', proxy: 'sh518880' } // 华安黄金
         ];
 
         let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
         let cache = {};
 
-        // --- 核心1: K线 & 持仓加载器 ---
-        // 这一步非常关键，它同时获取“昨日净值”和“重仓股结构”
+        // --- 1. 基础信息加载器 ---
+        function fetchBasicInfo(code) {
+            const script = document.createElement('script');
+            script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+            window.jsonpgz = function(data) {
+                if(data.fundcode !== code) return; 
+                if(!cache[code]) cache[code] = {};
+                cache[code].name = data.name; 
+                renderRow(code);
+            };
+            document.body.appendChild(script);
+        }
+
+        // --- 2. K线 & 持仓加载器 ---
         const NavLoader = {
             queue: [],
             isRunning: false,
@@ -79,14 +91,14 @@
                 this.isRunning = true;
                 const code = this.queue.shift();
                 
-                updateStatus(`解析 ${code}...`);
+                updateStatus(`同步 ${code}...`);
                 const script = document.createElement('script');
                 script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
                 
                 script.onload = () => {
                     if (!cache[code]) cache[code] = {};
 
-                    // 1. 获取官方净值
+                    // A. 官方净值
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
                         const dateObj = new Date(last.x);
@@ -94,10 +106,9 @@
                         cache[code].navDate = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
                     }
 
-                    // 2. 获取前十大重仓股 (Data_fundSharesPositions)
+                    // B. 持仓结构
                     if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
                         const latestReport = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
-                        // 解析数组: [时间, code1, name1, percent1, code2...]
                         const stocks = [];
                         for (let i = 1; i < latestReport.length && stocks.length < 10; i += 3) {
                             if (latestReport[i] && latestReport[i+2]) {
@@ -110,18 +121,14 @@
                         cache[code].holdings = stocks;
                     }
                     
-                    if (window.fS_name) cache[code].name = window.fS_name;
+                    if (!cache[code].name && window.fS_name) cache[code].name = window.fS_name;
 
-                    // 清理全局变量
                     window.Data_netWorthTrend = null;
                     window.Data_fundSharesPositions = null;
                     window.fS_name = null;
-
                     document.body.removeChild(script);
                     
-                    // 数据拿到了，决定走哪条路
                     decideAndFetchRealTime(code);
-                    
                     this.isRunning = false;
                     this.run();
                 };
@@ -130,27 +137,28 @@
             }
         };
 
-        // --- 核心2: 决策分流与实时获取 ---
+        // --- 3. 实时估值引擎 ---
         function decideAndFetchRealTime(code) {
             const item = db.find(i => i.code === code);
             const data = cache[code];
             if (!item || !data) return;
 
-            // 分支 A: 如果有 ETF 锚点 -> 走新浪 ETF 接口
+            // 预标记，确保标签立即显示
             if (item.proxy) {
+                cache[code].sourceType = 'proxy'; 
+                renderRow(code); 
                 fetchProxyData(code, item.proxy);
             } 
-            // 分支 B: 没有任何锚点 -> 走自研重仓股估值
             else if (data.holdings && data.holdings.length > 0) {
+                cache[code].sourceType = 'self';
+                renderRow(code);
                 fetchSelfValuation(code, data.holdings);
             }
-            // 分支 C: 既没锚点也没持仓数据 (可能是新基金) -> 只能摆烂显示 --
             else {
                 renderRow(code);
             }
         }
 
-        // 分支 A 实现: ETF 锚定
         function fetchProxyData(code, proxyCode) {
             const script = document.createElement('script');
             script.src = `https://hq.sinajs.cn/list=${proxyCode}`;
@@ -164,23 +172,21 @@
                     let percent = 0;
                     if (yesterday > 0) percent = ((current - yesterday) / yesterday) * 100;
 
-                    cache[code].rtVal = current.toFixed(3); // 显示 ETF 价格
+                    cache[code].rtVal = current.toFixed(3);
                     cache[code].rtChange = percent.toFixed(2);
-                    cache[code].sourceType = 'proxy'; // 标记源
                     renderRow(code);
                 }
             };
             document.body.appendChild(script);
         }
 
-        // 分支 B 实现: 自研重仓估值
         function fetchSelfValuation(code, holdings) {
-            // 构造 10 只股票的查询串
             const queryList = holdings.map(s => {
                 let prefix = '';
-                if (/^6/.test(s.code)) prefix = 'sh';
-                else if (/^[03]/.test(s.code)) prefix = 'sz';
-                else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'rt_hk'; // 港股
+                if (/^[569]/.test(s.code)) prefix = 'sh';
+                else if (/^[0123]/.test(s.code)) prefix = 'sz';
+                else if (/^4|8/.test(s.code)) prefix = 'bj';
+                else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'rt_hk';
                 return prefix + s.code;
             }).join(',');
 
@@ -189,46 +195,35 @@
             script.charset = 'gbk';
             script.onload = () => {
                 let totalContribution = 0;
-
                 holdings.forEach(stock => {
                     let prefix = '';
-                    if (/^6/.test(stock.code)) prefix = 'sh';
-                    else if (/^[03]/.test(stock.code)) prefix = 'sz';
+                    if (/^[569]/.test(stock.code)) prefix = 'sh';
+                    else if (/^[0123]/.test(stock.code)) prefix = 'sz';
+                    else if (/^4|8/.test(stock.code)) prefix = 'bj';
                     else if (/^0/.test(stock.code) && stock.code.length === 5) prefix = 'rt_hk';
                     
                     const dataStr = window[`hq_str_${prefix}${stock.code}`];
                     if (dataStr) {
                         const parts = dataStr.split(',');
                         let current, prevClose, changePct = 0;
-                        
-                        // 兼容港股和A股的字段位置
                         if (prefix === 'rt_hk') {
-                            current = parseFloat(parts[6]);
-                            prevClose = parseFloat(parts[3]);
+                            current = parseFloat(parts[6]); prevClose = parseFloat(parts[3]);
                         } else {
-                            current = parseFloat(parts[3]);
-                            prevClose = parseFloat(parts[2]);
+                            current = parseFloat(parts[3]); prevClose = parseFloat(parts[2]);
                         }
-
                         if (prevClose > 0 && current > 0) {
                             changePct = ((current - prevClose) / prevClose) * 100;
                         }
-                        
-                        // 核心公式: 贡献度 = 权重 * 涨跌幅
                         totalContribution += (stock.percent * changePct) / 100;
                     }
                 });
 
-                // 计算绝对估值: 昨日净值 * (1 + 涨幅)
                 const nav = parseFloat(cache[code].nav || 0);
                 let estimatedVal = '--';
-                if (nav > 0) {
-                    estimatedVal = (nav * (1 + totalContribution / 100)).toFixed(4);
-                }
+                if (nav > 0) estimatedVal = (nav * (1 + totalContribution / 100)).toFixed(4);
 
                 cache[code].rtVal = estimatedVal;
                 cache[code].rtChange = totalContribution.toFixed(2);
-                cache[code].sourceType = 'self'; // 标记源
                 renderRow(code);
             };
             document.body.appendChild(script);
@@ -236,9 +231,9 @@
 
         // --- 业务逻辑 ---
         function refreshAll() {
-            updateStatus('正在计算...');
-            // 如果缓存里已经有持仓结构了，直接去抓实时数据，不用重新加载 pingzhongdata
+            updateStatus('更新中...');
             db.forEach(item => {
+                if(!cache[item.code]?.name) fetchBasicInfo(item.code);
                 if (cache[item.code] && cache[item.code].holdings) {
                     decideAndFetchRealTime(item.code);
                 } else {
@@ -254,7 +249,8 @@
             if (/^\d{6}$/.test(code) && !db.find(i => i.code === code)) {
                 db.unshift({ code: code, proxy: '' });
                 saveDb();
-                NavLoader.add(code); // 必须重新加载结构
+                fetchBasicInfo(code);
+                NavLoader.add(code);
                 renderAll();
                 input.value = '';
             }
@@ -268,14 +264,26 @@
             }
         }
 
+        // --- [核心修改] 智能前缀判断 ---
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            const input = prompt('输入 ETF 代码 (sh518880)，空值则使用自研估值:', item.proxy || '');
+            const input = prompt('输入 ETF 代码 (如 518880)，无需前缀:', item.proxy || '');
             if (input !== null) {
-                item.proxy = input.trim();
+                let val = input.trim();
+                // 只有当输入纯数字时，才自动加前缀
+                if (/^\d+$/.test(val)) {
+                    if (/^[569]/.test(val)) val = 'sh' + val;
+                    else if (/^[0123]/.test(val)) val = 'sz' + val;
+                    else if (/^[48]/.test(val)) val = 'bj' + val;
+                }
+                
+                item.proxy = val;
                 saveDb();
-                // 清理缓存中的实时数据，强制刷新
-                if(cache[code]) { delete cache[code].rtVal; delete cache[code].rtChange; }
+                if(cache[code]) { 
+                    delete cache[code].rtVal; 
+                    delete cache[code].rtChange; 
+                    cache[code].sourceType = item.proxy ? 'proxy' : 'self'; 
+                }
                 renderRow(code);
                 refreshAll();
             }
@@ -284,7 +292,7 @@
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
         function updateStatus(msg) { document.getElementById('globalStatus').innerText = msg; }
 
-        // --- 渲染逻辑 (回归表格) ---
+        // --- 渲染逻辑 ---
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
@@ -312,27 +320,24 @@
             
             const rtVal = data.rtVal || '--';
             const rtChange = data.rtChange || 0;
-            const sourceType = data.sourceType || ''; // 'proxy' or 'self'
+            const sourceType = data.sourceType || '';
 
             const isUp = parseFloat(rtChange) >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500';
             const bgClass = isUp ? 'bg-red-50' : 'bg-green-50';
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
-            // 底部标签逻辑
             let subTag = '';
             let valLabel = '';
 
             if (sourceType === 'proxy') {
-                // 锚点模式
-                valLabel = '<span class="text-blue-400">⚓ETF</span>';
+                valLabel = '<span class="text-blue-500 font-bold">⚓ETF</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ${item.proxy}</div>`;
             } else if (sourceType === 'self') {
-                // 自研模式
-                valLabel = '<span class="text-orange-400">⚡自研</span>';
+                valLabel = '<span class="text-orange-500 font-bold">⚡自研</span>';
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">重仓透视</div>`;
             } else {
-                valLabel = '<span class="text-slate-300">--</span>';
+                valLabel = '<span class="text-slate-200">--</span>';
             }
 
             tr.innerHTML = `
