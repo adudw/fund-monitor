@@ -3,33 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>自研看板 V9.2 (智能版)</title>
+    <title>核心资产看板 V10</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
         .up { color: #ef4444; }
         .down { color: #22c55e; }
         .bg-up { background-color: #fef2f2; }
         .bg-down { background-color: #f0fdf4; }
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
+        
+        /* 拖拽时的样式优化 */
+        .sortable-ghost { opacity: 0.4; background: #f1f5f9; } /* 拖动占位符 */
+        .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); } /* 正在拖动的元素 */
+        
+        /* 编辑模式下的过渡动画 */
+        .action-col, .handle-col { transition: all 0.2s ease; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
     <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-20 relative">
         
-        <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm">
+        <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-colors duration-300" id="mainHeader">
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">V9.2 Smart</span>
+                    <span id="globalStatus" class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">V10.0 Pro</span>
                 </div>
-                <button onclick="refreshAll()" class="p-2 bg-slate-100 rounded-lg active:bg-slate-200 transition">
-                    <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
+                    </button>
+                    <button onclick="refreshAll()" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:bg-slate-200 transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
             </div>
-            <div class="flex gap-2">
+            
+            <div class="flex gap-2 transition-all duration-300 overflow-hidden" id="addBar">
                 <input type="text" id="fundInput" inputmode="numeric" placeholder="输入代码 (如 005827)" 
                        class="flex-1 bg-slate-100 border-none px-3 py-2 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all">
                 <button onclick="addNewFund()" class="bg-blue-600 text-white px-4 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition">添加</button>
+            </div>
+            <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">
+                按住右侧三横杠拖动排序，点击按钮完成
             </div>
         </header>
 
@@ -42,8 +59,7 @@
                             <th class="py-3 px-2 text-right">净值</th>
                             <th class="py-3 px-2 text-right">估值</th>
                             <th class="py-3 px-3 text-right">涨跌</th>
-                            <th class="w-8"></th>
-                        </tr>
+                            <th class="w-10"></th> </tr>
                     </thead>
                     <tbody id="fundTableBody" class="divide-y divide-slate-50"></tbody>
                 </table>
@@ -56,7 +72,7 @@
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v9_2';
+        const STORAGE_KEY = 'my_fund_v10';
         const DEFAULT_DB = [
             { code: '005827', proxy: '' },       // 易方达蓝筹
             { code: '000217', proxy: 'sh518880' } // 华安黄金
@@ -64,6 +80,8 @@
 
         let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
         let cache = {};
+        let isEditMode = false; // 状态：是否处于排序模式
+        let sortableInstance = null; // Sortable 实例
 
         // --- 1. 基础信息加载器 ---
         function fetchBasicInfo(code) {
@@ -143,7 +161,6 @@
             const data = cache[code];
             if (!item || !data) return;
 
-            // 预标记，确保标签立即显示
             if (item.proxy) {
                 cache[code].sourceType = 'proxy'; 
                 renderRow(code); 
@@ -229,6 +246,53 @@
             document.body.appendChild(script);
         }
 
+        // --- 排序交互逻辑 (新功能) ---
+        function toggleEditMode() {
+            isEditMode = !isEditMode;
+            const btn = document.getElementById('editBtn');
+            const addBar = document.getElementById('addBar');
+            const editTip = document.getElementById('editTip');
+            
+            if (isEditMode) {
+                // 进入编辑模式
+                btn.classList.add('bg-blue-100', 'text-blue-600');
+                btn.innerHTML = '完成'; // 更改按钮文字
+                addBar.classList.add('hidden'); // 隐藏添加栏
+                editTip.classList.remove('hidden');
+                
+                // 启用 Sortable
+                initSortable();
+            } else {
+                // 退出编辑模式
+                btn.classList.remove('bg-blue-100', 'text-blue-600');
+                btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>';
+                addBar.classList.remove('hidden');
+                editTip.classList.add('hidden');
+                
+                // 销毁 Sortable，恢复正常
+                if (sortableInstance) sortableInstance.destroy();
+            }
+            // 重新渲染每一行，切换最后一列的显示状态
+            renderAll();
+        }
+
+        function initSortable() {
+            const tbody = document.getElementById('fundTableBody');
+            sortableInstance = new Sortable(tbody, {
+                handle: '.drag-handle', // 只能拖拽这个手柄
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                onEnd: function (evt) {
+                    // 拖拽结束，更新数据源顺序
+                    const item = db.splice(evt.oldIndex, 1)[0];
+                    db.splice(evt.newIndex, 0, item);
+                    saveDb(); // 保存新顺序
+                    // 注意：不需要 renderAll，Sortable 已经帮我们移动了 DOM
+                }
+            });
+        }
+
         // --- 业务逻辑 ---
         function refreshAll() {
             updateStatus('更新中...');
@@ -264,19 +328,16 @@
             }
         }
 
-        // --- [核心修改] 智能前缀判断 ---
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
             const input = prompt('输入 ETF 代码 (如 518880)，无需前缀:', item.proxy || '');
             if (input !== null) {
                 let val = input.trim();
-                // 只有当输入纯数字时，才自动加前缀
                 if (/^\d+$/.test(val)) {
                     if (/^[569]/.test(val)) val = 'sh' + val;
                     else if (/^[0123]/.test(val)) val = 'sz' + val;
                     else if (/^[48]/.test(val)) val = 'bj' + val;
                 }
-                
                 item.proxy = val;
                 saveDb();
                 if(cache[code]) { 
@@ -302,7 +363,9 @@
             db.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.id = `row-${item.code}`;
-                tr.className = "active:bg-slate-50 transition-colors border-b border-slate-50 last:border-0";
+                tr.className = "active:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 bg-white";
+                // 加上 data-id 方便 Sortable 识别
+                tr.setAttribute('data-id', item.code);
                 tbody.appendChild(tr);
                 renderRow(item.code);
             });
@@ -340,6 +403,29 @@
                 valLabel = '<span class="text-slate-200">--</span>';
             }
 
+            // [关键逻辑] 根据 isEditMode 渲染最后一列
+            let lastColHtml = '';
+            if (isEditMode) {
+                // 编辑模式：显示拖拽手柄
+                lastColHtml = `
+                    <div class="drag-handle cursor-move p-3 text-slate-400 hover:text-slate-600 flex justify-center">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    </div>
+                `;
+            } else {
+                // 正常模式：显示操作按钮
+                lastColHtml = `
+                    <div class="flex flex-col gap-2 items-center">
+                        <button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                        </button>
+                        <button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                `;
+            }
+
             tr.innerHTML = `
                 <td class="py-3 px-3 align-top">
                     <div class="text-sm font-bold text-slate-700 leading-snug whitespace-normal line-clamp-2 mb-0.5">${name}</div>
@@ -363,15 +449,8 @@
                     ${subTag}
                 </td>
 
-                <td class="py-3 px-1 text-center align-middle">
-                    <div class="flex flex-col gap-2 items-center">
-                        <button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                        </button>
-                        <button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        </button>
-                    </div>
+                <td class="py-3 px-1 text-center align-middle w-10">
+                    ${lastColHtml}
                 </td>
             `;
         }
