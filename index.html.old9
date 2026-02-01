@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>基金核心看板 V7.3</title>
+    <title>基金核心看板 V7.2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .up { color: #ef4444; }
@@ -20,7 +20,7 @@
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">V7.3 修复版</span>
+                    <span id="globalStatus" class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">连接中...</span>
                 </div>
                 <button onclick="refreshAll()" class="p-2 bg-slate-100 rounded-lg active:bg-slate-200 transition">
                     <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -45,16 +45,22 @@
                             <th class="w-8"></th>
                         </tr>
                     </thead>
-                    <tbody id="fundTableBody" class="divide-y divide-slate-50"></tbody>
+                    <tbody id="fundTableBody" class="divide-y divide-slate-50">
+                        </tbody>
                 </table>
-                <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">暂无数据，请添加基金代码</div>
+                <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">
+                    暂无数据，请添加基金代码
+                </div>
             </div>
-            <p class="text-center text-[10px] text-slate-300 mt-6 px-4">净值：官方确认(K线) | 估值：实时(ETF/估算)</p>
+            
+            <p class="text-center text-[10px] text-slate-300 mt-6 px-4">
+                净值：官方最新确认(K线) | 估值：实时(ETF/估算)
+            </p>
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v7_3'; // 升级数据库版本
+        const STORAGE_KEY = 'my_fund_v7_2';
         const DEFAULT_DB = [
             { code: '005562', proxy: '' },       
             { code: '000217', proxy: 'sh518880' } 
@@ -93,6 +99,7 @@
                     }
                     window.Data_netWorthTrend = null;
                     window.fS_name = null;
+                    
                     document.body.removeChild(script);
                     renderRow(code);
                     this.isRunning = false;
@@ -103,9 +110,8 @@
             }
         };
 
-        // --- 核心2: 实时数据获取 ---
+        // --- 核心2: 实时数据 ---
         function fetchRealTime(item) {
-            // A. 影子模式 (ETF)
             if (item.proxy) {
                 const script = document.createElement('script');
                 script.src = `https://hq.sinajs.cn/list=${item.proxy}`;
@@ -114,9 +120,7 @@
                     const dataStr = window[`hq_str_${item.proxy}`];
                     if (dataStr) {
                         const parts = dataStr.split(',');
-                        // 确保解析正确，新浪股票接口通常 parts[3] 是当前价
-                        // 如果是停牌或未开盘，可能需要 fallback 到 parts[2](昨收)
-                        const current = parseFloat(parts[3] == 0 ? parts[2] : parts[3]); 
+                        const current = parseFloat(parts[3]);
                         const yesterday = parseFloat(parts[2]);
                         let percent = 0;
                         if (yesterday > 0) percent = ((current - yesterday) / yesterday) * 100;
@@ -129,36 +133,20 @@
                     }
                 };
                 document.body.appendChild(script);
-            } 
-            // B. 普通估值模式
-            else {
+            } else {
                 const script = document.createElement('script');
                 script.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
                 document.body.appendChild(script);
             }
         }
 
-        // --- 核心修复：天天基金回调 ---
         window.jsonpgz = function(data) {
-            const code = data.fundcode;
-            const item = db.find(i => i.code === code);
-
-            // [BUG FIX] 关键逻辑：
-            // 如果数据库里这个基金已经绑定了 proxy (ETF)，
-            // 那么天天基金返回的任何数据都必须丢弃，防止覆盖掉 ETF 的实时数据！
-            if (item && item.proxy) {
-                // 即使丢弃估值，我们仍然可以利用一下它的名字（如果还没名字的话）
-                if (!cache[code]) cache[code] = {};
-                if (!cache[code].name) cache[code].name = data.name;
-                return; // 直接结束，不更新 rtChange
-            }
-
-            if (!cache[code]) cache[code] = {};
-            cache[code].rtVal = data.gsz;      
-            cache[code].rtChange = data.gszzl; 
-            cache[code].isProxy = false;
-            if (!cache[code].name) cache[code].name = data.name;
-            renderRow(code);
+            if (!cache[data.fundcode]) cache[data.fundcode] = {};
+            cache[data.fundcode].rtVal = data.gsz;      
+            cache[data.fundcode].rtChange = data.gszzl; 
+            cache[data.fundcode].isProxy = false;
+            if (!cache[data.fundcode].name) cache[data.fundcode].name = data.name;
+            renderRow(data.fundcode);
         };
 
         // --- 业务逻辑 ---
@@ -193,28 +181,11 @@
 
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            let defaultVal = item.proxy || '';
-            // 简单提示一下前缀
-            const input = prompt(
-                `绑定对标代码 (解决估值不准/失效问题)\n\n请输入场内代码，必须带前缀：\n- 上交所(5/6开头): shXXXXXX (如 sh518880)\n- 深交所(1/0/3开头): szXXXXXX (如 sz159939)\n\n空值则恢复默认估值。`, 
-                defaultVal
-            );
-            
+            const input = prompt('输入对标ETF代码 (如 sh518880)，空值则取消:', item.proxy || '');
             if (input !== null) {
-                const newVal = input.trim();
-                if (newVal !== item.proxy) {
-                    item.proxy = newVal;
-                    // [BUG FIX] 切换模式时，立即清空该基金的缓存，防止旧数据残留
-                    if(cache[code]) {
-                         delete cache[code].rtVal;
-                         delete cache[code].rtChange;
-                         delete cache[code].isProxy;
-                    }
-                    saveDb();
-                    // 立即显示 loading 状态并重新获取
-                    renderRow(code); 
-                    refreshAll();
-                }
+                item.proxy = input.trim();
+                saveDb();
+                refreshAll();
             }
         }
 
@@ -226,7 +197,10 @@
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
             const empty = document.getElementById('emptyState');
-            if (db.length === 0) { empty.classList.remove('hidden'); return; }
+            if (db.length === 0) {
+                empty.classList.remove('hidden');
+                return;
+            }
             empty.classList.add('hidden');
             db.forEach(item => {
                 const tr = document.createElement('tr');
@@ -256,11 +230,13 @@
             const bgClass = isUp ? 'bg-red-50' : 'bg-green-50';
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
-            // 底部标签渲染
+            // 这里实现了你的需求：如果有 proxy，显示对标代码；否则显示"估算"
             let subTag = '';
-            if (item.proxy) { // 只要绑定了proxy，就显示proxy代码，无论数据有没有回来
+            if (isProxy && item.proxy) {
+                // 显示 ⚓ sh518880
                 subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ${item.proxy}</div>`;
             } else {
+                // 显示普通的 估算
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">估算</div>`;
             }
 
