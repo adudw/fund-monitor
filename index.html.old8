@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>基金核心看板 V7.2</title>
+    <title>基金核心看板 V7.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .up { color: #ef4444; }
         .down { color: #22c55e; }
         .bg-up { background-color: #fef2f2; }
         .bg-down { background-color: #f0fdf4; }
+        /* 移除点击高亮 */
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
     </style>
 </head>
@@ -60,16 +61,17 @@
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v7_2';
+        const STORAGE_KEY = 'my_fund_v7_1';
+        // 默认数据
         const DEFAULT_DB = [
-            { code: '005562', proxy: '' },       
-            { code: '000217', proxy: 'sh518880' } 
+            { code: '005562', proxy: '' },       // 创金合信
+            { code: '000217', proxy: 'sh518880' } // 华安黄金 -> 绑定 黄金ETF
         ];
 
         let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
         let cache = {};
 
-        // --- 核心1: K线净值加载器 ---
+        // --- 核心1: K线净值加载器 (确保拿到最新确权净值) ---
         const NavLoader = {
             queue: [],
             isRunning: false,
@@ -82,7 +84,7 @@
                 this.isRunning = true;
                 const code = this.queue.shift();
                 
-                updateStatus(`同步 ${code}...`);
+                updateStatus(`获取 ${code} 净值...`);
                 const script = document.createElement('script');
                 script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
                 
@@ -90,13 +92,15 @@
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
                         const dateObj = new Date(last.x);
+                        // 格式化日期 01-30
                         const dateStr = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
                         
                         if (!cache[code]) cache[code] = {};
-                        cache[code].nav = last.y;      
-                        cache[code].navDate = dateStr; 
+                        cache[code].nav = last.y;      // 官方净值
+                        cache[code].navDate = dateStr; // 净值日期
                         if (window.fS_name) cache[code].name = window.fS_name;
                     }
+                    // 清理垃圾
                     window.Data_netWorthTrend = null;
                     window.fS_name = null;
                     
@@ -110,8 +114,9 @@
             }
         };
 
-        // --- 核心2: 实时数据 ---
+        // --- 核心2: 实时数据 (ETF 或 估值) ---
         function fetchRealTime(item) {
+            // 模式A: ETF 影子模式
             if (item.proxy) {
                 const script = document.createElement('script');
                 script.src = `https://hq.sinajs.cn/list=${item.proxy}`;
@@ -126,35 +131,39 @@
                         if (yesterday > 0) percent = ((current - yesterday) / yesterday) * 100;
 
                         if (!cache[item.code]) cache[item.code] = {};
-                        cache[item.code].rtVal = current.toFixed(3); 
+                        cache[item.code].rtVal = current.toFixed(3); // ETF价格
                         cache[item.code].rtChange = percent.toFixed(2);
-                        cache[item.code].isProxy = true; 
+                        cache[item.code].isProxy = true; // 标记为代理数据
                         renderRow(item.code);
                     }
                 };
                 document.body.appendChild(script);
-            } else {
+            } 
+            // 模式B: 普通估值模式
+            else {
                 const script = document.createElement('script');
                 script.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
                 document.body.appendChild(script);
             }
         }
 
+        // 天天基金回调
         window.jsonpgz = function(data) {
             if (!cache[data.fundcode]) cache[data.fundcode] = {};
-            cache[data.fundcode].rtVal = data.gsz;      
-            cache[data.fundcode].rtChange = data.gszzl; 
+            cache[data.fundcode].rtVal = data.gsz;      // 估算净值
+            cache[data.fundcode].rtChange = data.gszzl; // 估算涨幅
             cache[data.fundcode].isProxy = false;
+            // 如果还没名字，先用这个
             if (!cache[data.fundcode].name) cache[data.fundcode].name = data.name;
             renderRow(data.fundcode);
         };
 
         // --- 业务逻辑 ---
         function refreshAll() {
-            updateStatus('更新中...');
+            updateStatus('正在更新...');
             db.forEach(item => {
-                NavLoader.add(item.code); 
-                fetchRealTime(item);      
+                NavLoader.add(item.code); // 抓 K 线净值
+                fetchRealTime(item);      // 抓 实时数据
             });
             setTimeout(() => updateStatus('监控中'), 2000);
         }
@@ -197,11 +206,13 @@
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
             const empty = document.getElementById('emptyState');
+            
             if (db.length === 0) {
                 empty.classList.remove('hidden');
                 return;
             }
             empty.classList.add('hidden');
+
             db.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.id = `row-${item.code}`;
@@ -219,7 +230,7 @@
 
             const name = data.name || code;
             const nav = data.nav || '--';
-            const navDate = data.navDate || '--'; 
+            const navDate = data.navDate || '--'; // 净值日期
             
             const rtVal = data.rtVal || '--';
             const rtChange = data.rtChange || 0;
@@ -230,15 +241,8 @@
             const bgClass = isUp ? 'bg-red-50' : 'bg-green-50';
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
-            // 这里实现了你的需求：如果有 proxy，显示对标代码；否则显示"估算"
-            let subTag = '';
-            if (isProxy && item.proxy) {
-                // 显示 ⚓ sh518880
-                subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ${item.proxy}</div>`;
-            } else {
-                // 显示普通的 估算
-                subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">估算</div>`;
-            }
+            // 估值列的小标签
+            const valLabel = isProxy ? '<span class="text-blue-400">⚓ETF</span>' : '估算';
 
             tr.innerHTML = `
                 <td class="py-3 px-3 align-top">
@@ -253,13 +257,13 @@
 
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono ${colorClass} font-bold">${rtVal}</div>
+                    <div class="text-[10px] text-slate-300 scale-90 origin-right mt-0.5">${valLabel}</div>
                 </td>
 
                 <td class="py-3 px-3 text-right align-top">
                     <div class="inline-flex items-center justify-center min-w-[56px] px-1.5 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">
                         ${sign}${rtChange}%
                     </div>
-                    ${subTag}
                 </td>
 
                 <td class="py-3 px-1 text-center align-middle">
@@ -275,6 +279,7 @@
             `;
         }
 
+        // Init
         renderAll();
         refreshAll();
         setInterval(refreshAll, 60000);
