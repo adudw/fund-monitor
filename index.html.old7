@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>基金核心看板 V7</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .up { color: #ef4444; }
+        .down { color: #22c55e; }
+        .bg-up { background-color: #fef2f2; }
+        .bg-down { background-color: #f0fdf4; }
+        /* 移除点击高亮背景，保持清爽 */
+        .tap-transparent { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+    <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-32 relative">
+        
+        <header class="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 px-5 py-4 transition-all">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-xl font-bold text-slate-800 tracking-tight">核心资产监控</h1>
+                <div class="flex items-center gap-2">
+                     <span id="globalStatus" class="text-[10px] font-mono text-slate-400 bg-slate-100 px-2 py-1 rounded">就绪</span>
+                     <button onclick="refreshAll()" class="p-2 bg-slate-100 rounded-full active:rotate-180 transition duration-500">
+                        <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                     </button>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <input type="text" id="fundInput" inputmode="numeric" placeholder="输入基金代码 (如 000217)" 
+                       class="flex-1 bg-slate-100 border-none px-4 py-3 rounded-xl outline-none text-base focus:ring-2 focus:ring-blue-500 transition-all">
+                <button onclick="addNewFund()" class="bg-blue-600 text-white px-6 rounded-xl font-bold shadow-sm active:scale-95 transition">
+                    添加
+                </button>
+            </div>
+        </header>
+
+        <main class="p-4 md:p-6">
+            <div id="fundListContainer" class="flex flex-col gap-3">
+                </div>
+            
+            <div id="emptyState" class="hidden py-20 text-center">
+                <div class="inline-block p-4 bg-slate-100 rounded-full mb-3">
+                    <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                </div>
+                <p class="text-slate-400 text-sm">暂无资产，请添加代码</p>
+            </div>
+        </main>
+
+        <footer class="text-center text-[10px] text-slate-300 pb-8 px-8">
+            <p>点击卡片右侧“🔗”图标绑定 ETF 代码，以获取精准实时估值。</p>
+        </footer>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'my_fund_v7_db';
+        // 预设配置：包含基金代码和（可选的）对标 ETF 代码
+        // 000217(华安黄金) -> sh518880(黄金ETF)
+        const DEFAULT_DB = [
+            { code: '005562', proxy: '' },       // 创金合信 (无对标，用默认估值)
+            { code: '000217', proxy: 'sh518880' } // 华安黄金 (对标 黄金ETF)
+        ];
+
+        let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
+        let cache = {}; // 内存缓存
+
+        // --- 核心引擎 1: 队列加载器 (解决净值滞后) ---
+        // pingzhongdata 是重型 JS，包含全局变量 Data_netWorthTrend。
+        // 必须串行加载，否则变量会冲突。
+        const NavLoader = {
+            queue: [],
+            isRunning: false,
+            
+            add(code) {
+                this.queue.push(code);
+                this.run();
+            },
+
+            run() {
+                if (this.isRunning || this.queue.length === 0) return;
+                this.isRunning = true;
+                const code = this.queue.shift();
+                
+                updateStatus(`同步 ${code} 净值...`);
+
+                const script = document.createElement('script');
+                // 使用 https 协议加载天天基金 K 线数据
+                script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
+                
+                script.onload = () => {
+                    // 读取全局变量 Data_netWorthTrend
+                    if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
+                        const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
+                        // last 结构: {x: 时间戳, y: 净值, equityReturn: 涨幅, unitMoney: 分红}
+                        // 时间戳转换
+                        const dateObj = new Date(last.x);
+                        const dateStr = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
+                        
+                        if (!cache[code]) cache[code] = {};
+                        cache[code].nav = last.y;
+                        cache[code].navDate = dateStr;
+                        // 同时获取一下基金名称 (fS_name 也是该文件的全局变量)
+                        if (window.fS_name) cache[code].name = window.fS_name;
+                    }
+                    // 清理全局变量，防止污染
+                    window.Data_netWorthTrend = null;
+                    window.fS_name = null;
+                    
+                    document.body.removeChild(script);
+                    renderItem(code); // 局部刷新
+                    this.isRunning = false;
+                    this.run(); // 下一个
+                };
+
+                script.onerror = () => {
+                    console.error('Load failed:', code);
+                    this.isRunning = false;
+                    this.run();
+                };
+
+                document.body.appendChild(script);
+            }
+        };
+
+        // --- 核心引擎 2: 实时估值 (支持 ETF 影子) ---
+        function fetchRealTime(item) {
+            // 如果配置了 proxy (如 sh518880)，则走新浪股票接口
+            if (item.proxy) {
+                const script = document.createElement('script');
+                script.src = `https://hq.sinajs.cn/list=${item.proxy}`;
+                script.charset = 'gbk';
+                script.onload = () => {
+                    // var hq_str_sh518880 = "..."
+                    const varName = `hq_str_${item.proxy}`;
+                    const dataStr = window[varName];
+                    if (dataStr) {
+                        const parts = dataStr.split(',');
+                        // 新浪股票: 3=当前价, 2=昨收
+                        const current = parseFloat(parts[3]);
+                        const yesterday = parseFloat(parts[2]);
+                        let percent = 0;
+                        if (yesterday > 0) {
+                            percent = ((current - yesterday) / yesterday) * 100;
+                        }
+
+                        if (!cache[item.code]) cache[item.code] = {};
+                        cache[item.code].proxyChange = percent.toFixed(2);
+                        cache[item.code].proxyName = parts[0]; // 股票名称
+                        renderItem(item.code);
+                    }
+                };
+                document.body.appendChild(script);
+            } 
+            // 否则走天天基金估值 (fallback)
+            else {
+                const script = document.createElement('script');
+                script.src = `https://fundgz.1234567.com.cn/js/${item.code}.js?rt=${Date.now()}`;
+                script.onload = () => {
+                    // jsonpgz callback is global, handled below
+                };
+                document.body.appendChild(script);
+            }
+        }
+
+        // 天天基金回调
+        window.jsonpgz = function(data) {
+            if (!cache[data.fundcode]) cache[data.fundcode] = {};
+            cache[data.fundcode].estChange = data.gszzl;
+            cache[data.fundcode].estVal = data.gsz;
+            // 如果 NavLoader 还没跑完，先用这个名字
+            if (!cache[data.fundcode].name) cache[data.fundcode].name = data.name;
+            renderItem(data.fundcode);
+        };
+
+
+        // --- 业务逻辑 ---
+
+        function refreshAll() {
+            updateStatus('更新中...');
+            db.forEach(item => {
+                // 1. 启动净值加载 (K线数据)
+                NavLoader.add(item.code);
+                // 2. 启动实时估值 (ETF 或 估值API)
+                fetchRealTime(item);
+            });
+            setTimeout(() => updateStatus('监控中'), 3000);
+        }
+
+        function addNewFund() {
+            const input = document.getElementById('fundInput');
+            const code = input.value.trim();
+            if (/^\d{6}$/.test(code)) {
+                if (!db.find(i => i.code === code)) {
+                    db.unshift({ code: code, proxy: '' }); // 默认无 proxy
+                    saveDb();
+                    refreshAll();
+                    renderList(); // 重绘结构
+                    input.value = '';
+                } else { alert('已存在'); }
+            }
+        }
+
+        function removeFund(code) {
+            if(confirm('删除此基金？')) {
+                db = db.filter(i => i.code !== code);
+                saveDb();
+                renderList();
+            }
+        }
+
+        function bindProxy(code) {
+            const item = db.find(i => i.code === code);
+            const input = prompt(
+                `为 ${code} 设置实时对标 (影子锚点)\n\n请输入场内代码 (如 黄金ETF 输入 sh518880)。\n输入空值则恢复默认估值。`, 
+                item.proxy || ''
+            );
+            if (input !== null) {
+                item.proxy = input.trim();
+                saveDb();
+                refreshAll();
+            }
+        }
+
+        function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+        function updateStatus(msg) { document.getElementById('globalStatus').innerText = msg; }
+
+        // --- 渲染逻辑 (无表格，改用卡片流) ---
+
+        function renderList() {
+            const container = document.getElementById('fundListContainer');
+            const empty = document.getElementById('emptyState');
+            container.innerHTML = '';
+
+            if (db.length === 0) {
+                empty.classList.remove('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+
+            db.forEach(item => {
+                // 创建卡片骨架
+                const div = document.createElement('div');
+                div.id = `card-${item.code}`;
+                div.className = "bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex justify-between items-center tap-transparent";
+                div.innerHTML = getCardHtml(item);
+                container.appendChild(div);
+            });
+        }
+
+        function renderItem(code) {
+            const card = document.getElementById(`card-${code}`);
+            const item = db.find(i => i.code === code);
+            if (card && item) {
+                card.innerHTML = getCardHtml(item);
+            }
+        }
+
+        function getCardHtml(item) {
+            const data = cache[item.code] || {};
+            const name = data.name || item.code;
+            
+            // 净值部分
+            const nav = data.nav || '--';
+            const navDate = data.navDate || '--';
+
+            // 实时部分
+            let realTimeHtml = '';
+            
+            if (item.proxy) {
+                // 走 ETF 代理
+                const change = data.proxyChange || 0;
+                const isUp = parseFloat(change) >= 0;
+                const color = isUp ? 'text-red-500' : 'text-green-500';
+                const bg = isUp ? 'bg-red-50' : 'bg-green-50';
+                const sign = parseFloat(change) > 0 ? '+' : '';
+                
+                realTimeHtml = `
+                    <div class="text-right">
+                        <div class="text-lg font-bold font-mono ${color} leading-none mb-1">${sign}${change}%</div>
+                        <div class="text-[10px] text-slate-400 font-medium bg-slate-100 px-1.5 py-0.5 rounded inline-block">
+                            ⚓ 对标: ${item.proxy}
+                        </div>
+                    </div>
+                `;
+            } else {
+                // 走普通估值
+                const change = data.estChange || 0;
+                const val = data.estVal || '--';
+                const isUp = parseFloat(change) >= 0;
+                const color = isUp ? 'text-red-500' : 'text-green-500';
+                const sign = parseFloat(change) > 0 ? '+' : '';
+
+                realTimeHtml = `
+                    <div class="text-right">
+                        <div class="text-lg font-bold font-mono ${color} leading-none mb-1">${sign}${change}%</div>
+                        <div class="text-[10px] text-slate-400">
+                            估 ${val}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="flex-1 min-w-0 pr-4">
+                    <div class="text-sm font-bold text-slate-700 truncate mb-1">${name}</div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-mono text-slate-500 bg-slate-50 px-1.5 rounded border border-slate-100">${nav}</span>
+                        <span class="text-[10px] text-slate-300">已确认 ${navDate}</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    ${realTimeHtml}
+                    
+                    <div class="flex flex-col gap-2 pl-3 border-l border-slate-100">
+                        <button onclick="bindProxy('${item.code}')" class="text-slate-300 hover:text-blue-500 transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                        </button>
+                        <button onclick="removeFund('${item.code}')" class="text-slate-300 hover:text-red-500 transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 启动
+        renderList();
+        refreshAll();
+        // 自动刷新 (9:00 - 15:00 激进刷新，其他时间慢刷新？暂定全局30s)
+        setInterval(refreshAll, 30000);
+
+    </script>
+</body>
+</html>
