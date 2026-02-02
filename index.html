@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V17.2</title>
+    <title>基金涨跌监控 V17.3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V17.2</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-green-600 px-1.5 py-0.5 rounded font-mono font-bold">V17.3 Fix</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -91,7 +91,8 @@
                 <div class="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all sm:my-8 w-full max-w-sm p-6 modal-enter" id="modalContent">
                     <h3 class="text-lg font-bold leading-6 text-slate-800 mb-4">添加监控对象</h3>
                     <div class="mt-2">
-                        <input type="number" id="modalInput" inputmode="numeric" placeholder="请输入6位代码 (如 005827)" class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-300">
+                        <input type="number" id="modalInput" inputmode="numeric" placeholder="请输入6位代码 (如 005827)" 
+                               class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-300">
                         <p class="text-xs text-slate-400 mt-3 ml-1">支持：股票型、混合型、指数ETF联接、QDII等</p>
                     </div>
                     <div class="mt-6 flex gap-3">
@@ -140,25 +141,29 @@
             }
         };
 
+        // [核心修复] 全局定义回调，防止并发时被覆盖
+        window.jsonpgz = function(data) {
+            const code = data.fundcode;
+            if (!cache[code]) cache[code] = {};
+            cache[code].name = data.name;
+            cache[code].officialNav = data.dwjz; 
+            cache[code].officialDate = data.jzrq ? data.jzrq.substring(5) : '--';
+            if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
+                cache[code].rtVal = data.gsz; cache[code].rtChange = data.gszzl; cache[code].sourceType = 'official';
+            }
+            cache[code].backupVal = data.gsz; cache[code].backupChange = data.gszzl;
+            renderRow(code);
+        };
+
         function fetchFastData(code) {
             return new Promise((resolve) => {
                 const script = document.createElement('script');
-                window.jsonpgz = function(data) {
-                    if (data.fundcode !== code) return;
-                    if (!cache[code]) cache[code] = {};
-                    cache[code].name = data.name;
-                    cache[code].officialNav = data.dwjz; 
-                    cache[code].officialDate = data.jzrq ? data.jzrq.substring(5) : '--';
-                    if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
-                        cache[code].rtVal = data.gsz; cache[code].rtChange = data.gszzl; cache[code].sourceType = 'official';
-                    }
-                    cache[code].backupVal = data.gsz; cache[code].backupChange = data.gszzl;
-                    renderRow(code); resolve();
-                };
+                // 仅指定源，利用全局 jsonpgz 处理数据
                 script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-                script.onerror = () => resolve(); 
+                // onload 代表脚本加载并执行完毕 (window.jsonpgz 已经被调用)
+                script.onload = () => { try { document.body.removeChild(script); } catch(e){} resolve(); };
+                script.onerror = () => { try { document.body.removeChild(script); } catch(e){} resolve(); };
                 document.body.appendChild(script);
-                setTimeout(() => resolve(), 1000); 
             });
         }
 
@@ -264,7 +269,7 @@
                     else callback(0, 0);
                 } else callback(0, 0);
             };
-            script.onerror = () => { try { document.body.removeChild(script); } catch(e){} callback(0, 0); };
+            script.onerror = () => { callback(0, 0); try { document.body.removeChild(script); } catch(e){} };
             document.body.appendChild(script);
         }
 
@@ -291,15 +296,12 @@
         
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            // [Fix] 17.2: 输入框默认留白，提示语放在prompt标题中
             const input = prompt(
                 '请输入关联指数代码 (如 515880)\n支持自动补全沪深/港/美股\n\n当前关联: ' + (item.proxy || '无'), 
-                '' // <-- 这里是默认值，设为空字符串
+                '' 
             );
-            
             if (input !== null) {
                 let val = input.trim();
-                // 17.1 的智能补全逻辑
                 if (/^\d+$/.test(val)) {
                     if (val.length === 5) val = 'hk' + val;
                     else if (/^000/.test(val)) val = 'sh' + val;
