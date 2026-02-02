@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V13</title>
+    <title>基金涨跌监控 V13.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -17,8 +17,6 @@
         .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .loading-bar { height: 2px; width: 100%; background: #f1f5f9; position: absolute; bottom: 0; left: 0; }
         .loading-progress { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
-        
-        /* 弹窗动画 */
         .modal-enter { opacity: 0; transform: scale(0.95); }
         .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
         .modal-leave { opacity: 1; transform: scale(1); }
@@ -32,7 +30,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">基金涨跌监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-blue-600 px-1.5 py-0.5 rounded font-mono">V13.0</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono">V13.1 Fix</span>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
@@ -76,9 +74,8 @@
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
         </button>
 
-        <div id="addModal" class="fixed inset-0 z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div id="addModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
             <div class="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onclick="closeAddModal()"></div>
-            
             <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
                 <div class="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all sm:my-8 w-full max-w-sm p-6 modal-enter" id="modalContent">
                     <h3 class="text-lg font-bold leading-6 text-gray-900 mb-4">添加新基金</h3>
@@ -94,11 +91,10 @@
                 </div>
             </div>
         </div>
-
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v13';
+        const STORAGE_KEY = 'my_fund_v13_1';
         const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
         
         let db = [];
@@ -122,7 +118,13 @@
                     if (!cache[code]) cache[code] = {};
                     cache[code].name = data.name;
                     cache[code].officialNav = data.dwjz;
-                    cache[code].officialDate = data.gztime.split(' ')[0].substring(5);
+                    
+                    // [BUG FIX] 之前取的是 gztime (估值时间 02-02)，现在改取 jzrq (净值日期 01-29)
+                    if (data.jzrq) {
+                        cache[code].officialDate = data.jzrq.substring(5); // 2026-01-29 -> 01-29
+                    } else {
+                        cache[code].officialDate = '--';
+                    }
                     
                     if (cache[code].sourceType !== 'proxy') {
                         cache[code].rtVal = data.gsz;
@@ -319,7 +321,7 @@
             renderRow(code);
         }
 
-        // --- UI 操作逻辑 (弹窗相关) ---
+        // --- UI ---
         function openAddModal() {
             document.getElementById('addModal').classList.remove('hidden');
             document.getElementById('modalContent').classList.remove('modal-leave-active');
@@ -354,13 +356,11 @@
             }
         }
         
-        // 绑定弹窗回车键
         document.getElementById('modalInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') confirmAdd();
         });
 
-        // --- 主流程 ---
-        async function fullReload() {
+        function fullReload() {
             updateProgress(10);
             HeavyLoader.queue = [];
             HeavyLoader.isRunning = false;
@@ -372,10 +372,10 @@
             renderAll(); 
 
             const promises = db.map(item => fetchFastData(item.code));
-            await Promise.all(promises);
-            updateProgress(30);
-
-            db.forEach(item => HeavyLoader.add(item.code));
+            Promise.all(promises).then(() => {
+                updateProgress(30);
+                db.forEach(item => HeavyLoader.add(item.code));
+            });
         }
 
         function removeFund(code) {
@@ -419,7 +419,6 @@
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
         function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
 
-        // --- 渲染逻辑 (更新文案) ---
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
@@ -463,7 +462,6 @@
                 valLabel = '<span class="text-orange-500 font-bold">⚡自研</span>';
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">重仓透视</div>`;
             } else if (sourceType === 'official') {
-                // [文案修改] 兜底接口 -> 天天
                 valLabel = '<span class="text-slate-400">天天</span>';
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">天天基金</div>`;
             } else {
