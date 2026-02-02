@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V17.3</title>
+    <title>基金涨跌监控 V17.4</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-green-600 px-1.5 py-0.5 rounded font-mono font-bold">V17.3 Fix</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V17.4</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -141,7 +141,6 @@
             }
         };
 
-        // [核心修复] 全局定义回调，防止并发时被覆盖
         window.jsonpgz = function(data) {
             const code = data.fundcode;
             if (!cache[code]) cache[code] = {};
@@ -158,9 +157,7 @@
         function fetchFastData(code) {
             return new Promise((resolve) => {
                 const script = document.createElement('script');
-                // 仅指定源，利用全局 jsonpgz 处理数据
                 script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-                // onload 代表脚本加载并执行完毕 (window.jsonpgz 已经被调用)
                 script.onload = () => { try { document.body.removeChild(script); } catch(e){} resolve(); };
                 script.onerror = () => { try { document.body.removeChild(script); } catch(e){} resolve(); };
                 document.body.appendChild(script);
@@ -297,11 +294,25 @@
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
             const input = prompt(
-                '请输入关联指数代码 (如 515880)\n支持自动补全沪深/港/美股\n\n当前关联: ' + (item.proxy || '无'), 
+                '请输入关联指数代码 (如 515880)\n支持自动补全沪深/港/美股\n\n⚠ 留空并点击确定即可【取消关联】\n当前关联: ' + (item.proxy || '无'), 
                 '' 
             );
+            
             if (input !== null) {
                 let val = input.trim();
+                // [Feature] V17.4: 留空即清除
+                if (val === '') {
+                    delete item.proxy; // 移除属性
+                    saveDb();
+                    // 重置状态
+                    if(cache[code]) { cache[code].sourceType = ''; cache[code].proxyError = false; }
+                    renderRow(code); 
+                    // 重新决策数据源（拟合或官方）
+                    HeavyLoader.add(code); 
+                    return;
+                }
+
+                // 常规绑定逻辑
                 if (/^\d+$/.test(val)) {
                     if (val.length === 5) val = 'hk' + val;
                     else if (/^000/.test(val)) val = 'sh' + val;
