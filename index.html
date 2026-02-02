@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V15.1</title>
+    <title>基金涨跌监控 V15.3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -29,23 +29,23 @@
         <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-all">
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
-                    <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金涨跌监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V15.1</span>
+                    <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V15.3</span>
                 </div>
 
                 <div class="flex items-center gap-2">
-                    <div class="flex items-center gap-1.5 bg-slate-100 rounded-full pl-3 pr-1 py-1 mr-1">
-                        <span class="text-[10px] text-slate-500 font-bold">拟合</span>
+                    <div class="h-8 flex items-center gap-2 bg-slate-100 rounded-lg px-3 mr-1 shadow-sm border border-slate-200">
+                        <span class="text-[10px] text-slate-500 font-bold whitespace-nowrap">重仓拟合</span>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="fittingToggle" class="sr-only peer" onchange="toggleFitting()">
                             <div class="w-7 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
                         </label>
                     </div>
 
-                    <button onclick="toggleEditMode()" id="editBtn" class="p-1.5 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition hover:bg-slate-200">
+                    <button onclick="toggleEditMode()" id="editBtn" class="h-8 w-8 flex items-center justify-center bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition hover:bg-slate-200 border border-transparent">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
                     </button>
-                    <button onclick="hardReset()" class="p-1.5 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition hover:text-red-600">
+                    <button onclick="hardReset()" class="h-8 w-8 flex items-center justify-center bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition hover:text-red-600 border border-transparent">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
@@ -112,16 +112,13 @@
 
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) {
-                db = JSON.parse(raw);
-            } else {
+            if (raw) db = JSON.parse(raw);
+            else {
                 const oldKeys = ['my_fund_v13_1', 'my_fund_v13'];
                 let recovered = null;
                 for (let key of oldKeys) {
                     const oldRaw = localStorage.getItem(key);
-                    if (oldRaw) {
-                        try { recovered = JSON.parse(oldRaw); if(recovered.length>0) break; } catch(e){}
-                    }
+                    if (oldRaw) { try { recovered = JSON.parse(oldRaw); if(recovered.length>0) break; } catch(e){} }
                 }
                 db = recovered || DEFAULT_DB;
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); 
@@ -147,11 +144,9 @@
                     if (!cache[code]) cache[code] = {};
                     cache[code].name = data.name;
                     cache[code].officialNav = data.dwjz; 
-                    
                     if (data.jzrq) cache[code].officialDate = data.jzrq.substring(5);
                     else cache[code].officialDate = '--';
                     
-                    // 只有非高级模式才允许覆盖
                     if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
                         cache[code].rtVal = data.gsz;
                         cache[code].rtChange = data.gszzl;
@@ -228,7 +223,7 @@
                 };
                 script.onerror = () => finish(); 
                 document.body.appendChild(script);
-                setTimeout(() => finish(), 3000); 
+                setTimeout(() => finish(), 5000); 
             }
         };
 
@@ -254,7 +249,7 @@
             else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
                 const queryList = data.holdings.map(s => {
                     let prefix = '';
-                    if (s.code.length === 5) prefix = 'hk'; // 港股优先
+                    if (s.code.length === 5) prefix = 'hk'; 
                     else if (/^[569]/.test(s.code)) prefix = 'sh';
                     else if (/^[0123]/.test(s.code)) prefix = 'sz';
                     else if (/^[48]/.test(s.code)) prefix = 'bj';
@@ -288,6 +283,8 @@
                         }
                     });
                     
+                    try { document.body.removeChild(script); } catch(e){}
+
                     if (validCount > 0) {
                         const nav = parseFloat(data.nav || data.officialNav || 0);
                         let est = '--';
@@ -300,7 +297,10 @@
                         fallbackToOfficial(code);
                     }
                 };
-                script.onerror = () => fallbackToOfficial(code);
+                script.onerror = () => {
+                    try { document.body.removeChild(script); } catch(e){}
+                    fallbackToOfficial(code);
+                };
                 document.body.appendChild(script);
             }
             else {
@@ -326,8 +326,12 @@
                 } else {
                     callback(0, 0);
                 }
+                try { document.body.removeChild(script); } catch(e){}
             };
-            script.onerror = () => callback(0, 0);
+            script.onerror = () => {
+                callback(0, 0);
+                try { document.body.removeChild(script); } catch(e){}
+            };
             document.body.appendChild(script);
         }
 
@@ -400,13 +404,11 @@
             updateProgress(10);
             HeavyLoader.queue = [];
             HeavyLoader.isRunning = false;
-            
             db.forEach(item => {
                 if (!cache[item.code]) cache[item.code] = {};
                 if (item.proxy) cache[item.code].sourceType = 'proxy';
             });
             renderAll(); 
-
             const promises = db.map(item => fetchFastData(item.code));
             Promise.all(promises).then(() => {
                 updateProgress(30);
@@ -434,7 +436,6 @@
                 }
                 item.proxy = val;
                 saveDb();
-                
                 if(cache[code]) { 
                     cache[code].sourceType = item.proxy ? 'proxy' : '';
                     cache[code].rtVal = '...'; 
@@ -461,7 +462,6 @@
             const empty = document.getElementById('emptyState');
             if (db.length === 0) { empty.classList.remove('hidden'); return; }
             empty.classList.add('hidden');
-            
             db.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.id = `row-${item.code}`;
@@ -496,10 +496,10 @@
                 subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ${item.proxy}</div>`;
             } else if (sourceType === 'self') {
                 valLabel = '<span class="text-orange-500 font-bold">⚡自研</span>';
-                subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">重仓透视</div>`;
+                subTag = `<div class="text-[10px] text-slate-400 scale-90 origin-right mt-1">⚡ 重仓拟合</div>`;
             } else if (sourceType === 'official') {
                 valLabel = '<span class="text-slate-400">天天</span>';
-                subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">天天基金</div>`;
+                subTag = `<div class="text-[10px] text-slate-400 scale-90 origin-right mt-1">天天基金</div>`;
             } else {
                 valLabel = '<span class="text-slate-200">...</span>';
             }
