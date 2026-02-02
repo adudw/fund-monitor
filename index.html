@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V17.0</title>
+    <title>基金涨跌监控 V17.2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -15,22 +15,10 @@
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
         .sortable-ghost { opacity: 0.4; background: #f1f5f9; }
         .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        
-        /* 进度条容器 */
-        .loading-container { 
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; 
-            background: transparent; overflow: hidden; pointer-events: none; 
-            opacity: 1; transition: opacity 0.5s ease-out;
-        }
-        /* 进度条本体 */
-        .loading-progress { 
-            height: 100%; background: #2563eb; 
-            width: 0%; transition: width 0.3s ease-out;
-            box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
-        }
-        /* 完成后隐藏 */
+        .loading-bar { height: 2px; width: 100%; background: #f1f5f9; position: absolute; bottom: 0; left: 0; }
+        .loading-progress { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
+        .loading-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; opacity: 1; transition: opacity 0.5s; }
         .loading-container.finished { opacity: 0; }
-
         .modal-enter { opacity: 0; transform: scale(0.95); }
         .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
         .modal-leave { opacity: 1; transform: scale(1); }
@@ -44,7 +32,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V17.0</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V17.2</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -66,10 +54,7 @@
             </div>
             
             <div class="hidden text-center text-xs text-blue-500 font-bold py-2 animate-pulse" id="editTip">按住右侧三横杠拖动排序 · 点击按钮完成</div>
-            
-            <div id="progressContainer" class="loading-container">
-                <div id="progressBar" class="loading-progress"></div>
-            </div>
+            <div id="progressContainer" class="loading-container"><div id="progressBar" class="loading-progress"></div></div>
         </header>
 
         <main class="p-2 md:p-6">
@@ -93,9 +78,7 @@
                     <p class="text-slate-400 text-sm">点击右下角按钮添加基金</p>
                 </div>
             </div>
-            <p class="text-center text-[10px] text-slate-300 mt-6 px-4 leading-relaxed">
-                数据源：腾讯财经(实时) + 东方财富(K线)
-            </p>
+            <p class="text-center text-[10px] text-slate-300 mt-6 px-4 leading-relaxed">数据源：腾讯财经(实时) + 东方财富(K线)</p>
         </main>
 
         <button onclick="openAddModal()" class="fixed bottom-8 right-8 w-14 h-14 bg-blue-600 rounded-full shadow-lg shadow-blue-500/30 flex items-center justify-center text-white z-40 hover:bg-blue-700 active:scale-90 transition-all duration-200 tap-transparent">
@@ -108,8 +91,7 @@
                 <div class="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all sm:my-8 w-full max-w-sm p-6 modal-enter" id="modalContent">
                     <h3 class="text-lg font-bold leading-6 text-slate-800 mb-4">添加监控对象</h3>
                     <div class="mt-2">
-                        <input type="number" id="modalInput" inputmode="numeric" placeholder="请输入6位代码 (如 005827)" 
-                               class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-300">
+                        <input type="number" id="modalInput" inputmode="numeric" placeholder="请输入6位代码 (如 005827)" class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-300">
                         <p class="text-xs text-slate-400 mt-3 ml-1">支持：股票型、混合型、指数ETF联接、QDII等</p>
                     </div>
                     <div class="mt-6 flex gap-3">
@@ -125,7 +107,6 @@
         const STORAGE_KEY = 'fund_monitor_permanent'; 
         const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
         let db = [];
-
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (raw) db = JSON.parse(raw);
@@ -147,66 +128,33 @@
         let isFittingEnabled = JSON.parse(localStorage.getItem('fitting_enabled') || 'false');
         document.getElementById('fittingToggle').checked = isFittingEnabled;
 
-        // [New] 全局进度管理器
         const ProgressMgr = {
-            total: 0,
-            completed: 0,
-            init(total) {
-                this.total = total;
-                this.completed = 0;
-                // 显示进度条
-                document.getElementById('progressContainer').classList.remove('finished');
-                this.update(5); // 初始 5%
-            },
-            tick() {
-                this.completed++;
-                // 计算进度: 30% 是基础数据，剩下 70% 分给各个基金
-                let pct = 30 + (this.completed / this.total * 70);
-                this.update(pct);
-            },
-            setPhase1Done() {
-                this.update(30);
-            },
+            total: 0, completed: 0,
+            init(total) { this.total = total; this.completed = 0; document.getElementById('progressContainer').classList.remove('finished'); this.update(5); },
+            tick() { this.completed++; this.update(30 + (this.completed / this.total * 70)); },
+            setPhase1Done() { this.update(30); },
             update(pct) {
                 if (pct > 100) pct = 100;
                 document.getElementById('progressBar').style.width = pct + '%';
-                if (pct >= 100) {
-                    setTimeout(() => {
-                        document.getElementById('progressContainer').classList.add('finished');
-                        // 归零以便下次动画
-                        setTimeout(() => { document.getElementById('progressBar').style.width = '0%'; }, 500);
-                    }, 500);
-                }
+                if (pct >= 100) setTimeout(() => { document.getElementById('progressContainer').classList.add('finished'); setTimeout(() => { document.getElementById('progressBar').style.width = '0%'; }, 500); }, 500);
             }
         };
 
         function fetchFastData(code) {
             return new Promise((resolve) => {
                 const script = document.createElement('script');
-                const originalCallback = window.jsonpgz;
-                
                 window.jsonpgz = function(data) {
-                    if (data.fundcode !== code) {
-                        if (originalCallback) originalCallback(data);
-                        return;
-                    }
+                    if (data.fundcode !== code) return;
                     if (!cache[code]) cache[code] = {};
                     cache[code].name = data.name;
                     cache[code].officialNav = data.dwjz; 
-                    if (data.jzrq) cache[code].officialDate = data.jzrq.substring(5);
-                    else cache[code].officialDate = '--';
-                    
+                    cache[code].officialDate = data.jzrq ? data.jzrq.substring(5) : '--';
                     if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
-                        cache[code].rtVal = data.gsz;
-                        cache[code].rtChange = data.gszzl;
-                        cache[code].sourceType = 'official';
+                        cache[code].rtVal = data.gsz; cache[code].rtChange = data.gszzl; cache[code].sourceType = 'official';
                     }
-                    cache[code].backupVal = data.gsz;
-                    cache[code].backupChange = data.gszzl;
-                    renderRow(code);
-                    resolve();
+                    cache[code].backupVal = data.gsz; cache[code].backupChange = data.gszzl;
+                    renderRow(code); resolve();
                 };
-
                 script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
                 script.onerror = () => resolve(); 
                 document.body.appendChild(script);
@@ -215,326 +163,172 @@
         }
 
         const HeavyLoader = {
-            queue: [],
-            isRunning: false,
+            queue: [], isRunning: false,
             add(code) {
-                // 如果跳过，直接去下一步，并手动告知进度
-                if (cache[code].sourceType === 'proxy') { fetchRealTime(code); return; }
-                if (!isFittingEnabled) { fetchRealTime(code); return; }
-                if (cache[code].holdings) { fetchRealTime(code); return; }
-                
-                this.queue.push(code);
-                this.run();
+                if (cache[code].sourceType === 'proxy' || !isFittingEnabled || cache[code].holdings) { fetchRealTime(code); return; }
+                this.queue.push(code); this.run();
             },
             run() {
                 if (this.isRunning || this.queue.length === 0) return;
-                this.isRunning = true;
-                const code = this.queue.shift();
-                
+                this.isRunning = true; const code = this.queue.shift();
                 const script = document.createElement('script');
-                let isFinished = false;
-
-                const finish = () => {
-                    if (isFinished) return;
-                    isFinished = true;
-                    window.Data_netWorthTrend = null;
-                    window.Data_fundSharesPositions = null;
-                    window.fS_name = null;
-                    try { document.body.removeChild(script); } catch(e){}
-                    
-                    fetchRealTime(code); // 这里去下一步
-                    
-                    this.isRunning = false;
-                    this.run();
-                };
-
+                const finish = () => { try { document.body.removeChild(script); } catch(e){} fetchRealTime(code); this.isRunning = false; this.run(); };
                 script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
                 script.onload = () => {
                     if (!cache[code]) cache[code] = {};
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
-                        const dateObj = new Date(last.x);
                         cache[code].nav = last.y;
-                        cache[code].navDate = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
+                        const d = new Date(last.x);
+                        cache[code].navDate = `${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
                     }
                     if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
-                        const latestReport = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
+                        const rep = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
                         const stocks = [];
-                        for (let i = 1; i < latestReport.length && stocks.length < 10; i += 3) {
-                            if (latestReport[i]) {
-                                stocks.push({ code: latestReport[i], percent: parseFloat(latestReport[i+2] || 0) });
-                            }
-                        }
+                        for (let i = 1; i < rep.length && stocks.length < 10; i += 3) if(rep[i]) stocks.push({ code: rep[i], percent: parseFloat(rep[i+2] || 0) });
                         cache[code].holdings = stocks;
                     }
                     finish();
                 };
-                script.onerror = () => finish(); 
-                document.body.appendChild(script);
-                setTimeout(() => finish(), 5000); 
+                script.onerror = finish; document.body.appendChild(script); setTimeout(finish, 5000); 
             }
         };
 
         function fetchRealTime(code) {
-            // [Fix] 无论成功失败，只要这个函数跑完了，就说明这个基金处理完毕
-            // 我们在 callback 或者 error 里调用 ProgressMgr.tick()
-            
             const item = db.find(i => i.code === code);
             const data = cache[code];
             if (!item) { ProgressMgr.tick(); return; }
-
-            const onDone = () => { ProgressMgr.tick(); };
+            const onDone = () => ProgressMgr.tick();
 
             if (item.proxy) {
-                cache[code].sourceType = 'proxy';
-                renderRow(code); 
+                cache[code].sourceType = 'proxy'; renderRow(code); 
                 fetchTencentData(item.proxy, (current, percent) => {
                     if (current > 0) {
-                        cache[code].rtVal = current.toFixed(3);
-                        cache[code].rtChange = percent.toFixed(2);
-                        cache[code].sourceType = 'proxy';
-                        renderRow(code);
+                        cache[code].rtVal = current.toFixed(3); cache[code].rtChange = percent.toFixed(2);
+                        cache[code].proxyError = false; 
                     } else {
-                        fallbackToOfficial(code);
+                        cache[code].proxyError = true;
                     }
-                    onDone();
+                    renderRow(code); onDone();
                 });
-            }
-            else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
+            } else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
                 const queryList = data.holdings.map(s => {
                     let prefix = '';
-                    if (s.code.length === 5) prefix = 'hk'; 
-                    else if (/^[569]/.test(s.code)) prefix = 'sh';
-                    else if (/^[0123]/.test(s.code)) prefix = 'sz';
-                    else if (/^[48]/.test(s.code)) prefix = 'bj';
+                    if (s.code.length === 5) prefix = 'hk';
+                    else if (/^6/.test(s.code)) prefix = 'sh'; 
+                    else if (/^0/.test(s.code)) prefix = 'sz'; 
+                    else if (/^3/.test(s.code)) prefix = 'sz'; 
+                    else if (/^8/.test(s.code) || /^4/.test(s.code)) prefix = 'bj';
+                    else prefix = 'sh'; 
                     return prefix + s.code;
                 }).join(',');
-
                 const script = document.createElement('script');
-                script.src = `https://qt.gtimg.cn/q=${queryList}`; 
-                script.charset = 'gbk';
+                script.src = `https://qt.gtimg.cn/q=${queryList}`; script.charset = 'gbk';
                 script.onload = () => {
-                    let totalContribution = 0;
-                    let validCount = 0;
+                    let total = 0, valid = 0;
                     data.holdings.forEach(stock => {
-                        let prefix = '';
-                        if (stock.code.length === 5) prefix = 'hk';
-                        else if (/^[569]/.test(stock.code)) prefix = 'sh';
-                        else if (/^[0123]/.test(stock.code)) prefix = 'sz';
-                        else if (/^[48]/.test(stock.code)) prefix = 'bj';
-                        
+                        let prefix = (stock.code.length === 5) ? 'hk' : (/^6/.test(stock.code) ? 'sh' : 'sz'); 
                         const val = window[`v_${prefix}${stock.code}`];
                         if (val) {
-                            validCount++;
-                            const parts = val.split('~');
-                            let current = parseFloat(parts[3]);
-                            let prevClose = parseFloat(parts[4]);
-                            let pct = 0;
-                            if (prevClose > 0 && current > 0) {
-                                pct = ((current - prevClose) / prevClose) * 100;
-                            }
-                            totalContribution += (stock.percent * pct) / 100;
+                            valid++;
+                            const p = val.split('~');
+                            const curr = parseFloat(p[3]); const prev = parseFloat(p[4]);
+                            if (prev > 0 && curr > 0) total += (stock.percent * ((curr - prev) / prev) * 100) / 100;
                         }
                     });
-                    
                     try { document.body.removeChild(script); } catch(e){}
-
-                    if (validCount > 0) {
+                    if (valid > 0) {
                         const nav = parseFloat(data.nav || data.officialNav || 0);
-                        let est = '--';
-                        if (nav > 0) est = (nav * (1 + totalContribution/100)).toFixed(4);
-                        cache[code].rtVal = est;
-                        cache[code].rtChange = totalContribution.toFixed(2);
+                        if (nav > 0) cache[code].rtVal = (nav * (1 + total/100)).toFixed(4);
+                        cache[code].rtChange = total.toFixed(2);
                         cache[code].sourceType = 'self';
                         renderRow(code);
-                    } else {
-                        fallbackToOfficial(code);
-                    }
+                    } else fallbackToOfficial(code);
                     onDone();
                 };
-                script.onerror = () => {
-                    try { document.body.removeChild(script); } catch(e){}
-                    fallbackToOfficial(code);
-                    onDone();
-                };
+                script.onerror = () => { try { document.body.removeChild(script); } catch(e){} fallbackToOfficial(code); onDone(); };
                 document.body.appendChild(script);
-            }
-            else {
-                fallbackToOfficial(code);
-                onDone();
-            }
+            } else { fallbackToOfficial(code); onDone(); }
         }
 
         function fetchTencentData(symbol, callback) {
             const script = document.createElement('script');
-            script.src = `https://qt.gtimg.cn/q=${symbol}`;
-            script.charset = 'gbk';
+            script.src = `https://qt.gtimg.cn/q=${symbol}`; script.charset = 'gbk';
             script.onload = () => {
                 const val = window[`v_${symbol}`];
+                try { document.body.removeChild(script); } catch(e){}
                 if (val) {
-                    const parts = val.split('~');
-                    const current = parseFloat(parts[3]);
-                    const prevClose = parseFloat(parts[4]);
-                    let pct = 0;
-                    if (prevClose > 0 && current > 0) {
-                        pct = ((current - prevClose) / prevClose) * 100;
-                    }
-                    callback(current, pct);
-                } else {
-                    callback(0, 0);
-                }
-                try { document.body.removeChild(script); } catch(e){}
+                    const p = val.split('~');
+                    const curr = parseFloat(p[3]); const prev = parseFloat(p[4]);
+                    if (prev > 0 && curr > 0) callback(curr, ((curr - prev) / prev) * 100);
+                    else callback(0, 0);
+                } else callback(0, 0);
             };
-            script.onerror = () => {
-                callback(0, 0);
-                try { document.body.removeChild(script); } catch(e){}
-            };
+            script.onerror = () => { try { document.body.removeChild(script); } catch(e){} callback(0, 0); };
             document.body.appendChild(script);
         }
 
         function fallbackToOfficial(code) {
             cache[code].sourceType = 'official';
-            if (cache[code].backupVal) {
-                cache[code].rtVal = cache[code].backupVal;
-                cache[code].rtChange = cache[code].backupChange;
-            } else if (cache[code].officialVal) {
-                cache[code].rtVal = cache[code].officialVal;
-                cache[code].rtChange = cache[code].officialRate;
-            }
+            if (cache[code].backupVal) { cache[code].rtVal = cache[code].backupVal; cache[code].rtChange = cache[code].backupChange; }
+            else if (cache[code].officialVal) { cache[code].rtVal = cache[code].officialVal; cache[code].rtChange = cache[code].officialRate; }
             renderRow(code);
         }
 
-        function toggleFitting() {
-            isFittingEnabled = document.getElementById('fittingToggle').checked;
-            localStorage.setItem('fitting_enabled', isFittingEnabled);
-            fullReload(); // 切换开关后重新走一遍流程，触发进度条
-        }
-
-        function openAddModal() {
-            document.getElementById('addModal').classList.remove('hidden');
-            document.getElementById('modalContent').classList.remove('modal-leave-active');
-            document.getElementById('modalContent').classList.add('modal-enter-active');
-            setTimeout(() => document.getElementById('modalInput').focus(), 50);
-        }
-
-        function closeAddModal() {
-            document.getElementById('modalContent').classList.remove('modal-enter-active');
-            document.getElementById('modalContent').classList.add('modal-leave-active');
-            setTimeout(() => {
-                document.getElementById('addModal').classList.add('hidden');
-            }, 150);
-        }
-
+        function toggleFitting() { isFittingEnabled = document.getElementById('fittingToggle').checked; localStorage.setItem('fitting_enabled', isFittingEnabled); fullReload(); }
+        function openAddModal() { document.getElementById('addModal').classList.remove('hidden'); document.getElementById('modalContent').classList.add('modal-enter-active'); setTimeout(() => document.getElementById('modalInput').focus(), 50); }
+        function closeAddModal() { document.getElementById('addModal').classList.add('hidden'); }
         function confirmAdd() {
-            const input = document.getElementById('modalInput');
-            const code = input.value.trim();
+            const code = document.getElementById('modalInput').value.trim();
             if (/^\d{6}$/.test(code)) {
-                if (!db.find(i => i.code === code)) {
-                    db.unshift({ code: code, proxy: '' });
-                    saveDb();
-                    renderAll();
-                    // 添加新基金时，单独触发流程，暂不影响全局进度条
-                    fetchFastData(code).then(() => HeavyLoader.add(code));
-                    closeAddModal();
-                    input.value = '';
-                } else {
-                    alert('该基金已在列表中');
-                }
-            } else {
-                alert('请输入6位数字代码');
-            }
+                if (!db.find(i => i.code === code)) { db.unshift({ code: code, proxy: '' }); saveDb(); fullReload(); closeAddModal(); document.getElementById('modalInput').value = ''; }
+                else alert('该基金已在列表中');
+            } else alert('请输入6位数字代码');
         }
+        document.getElementById('modalInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') confirmAdd(); });
+        function fullReload() { ProgressMgr.init(db.length); HeavyLoader.queue = []; HeavyLoader.isRunning = false; db.forEach(i => { if(!cache[i.code]) cache[i.code]={}; if(i.proxy) cache[i.code].sourceType='proxy'; }); renderAll(); Promise.all(db.map(i => fetchFastData(i.code))).then(() => { ProgressMgr.setPhase1Done(); db.forEach(i => HeavyLoader.add(i.code)); }); }
+        function removeFund(code) { if(confirm('确定移除该基金吗？')) { db = db.filter(i => i.code !== code); saveDb(); renderAll(); } }
         
-        document.getElementById('modalInput').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') confirmAdd();
-        });
-
-        function fullReload() {
-            // [Fix] 初始化进度条总数
-            ProgressMgr.init(db.length);
-            
-            HeavyLoader.queue = [];
-            HeavyLoader.isRunning = false;
-            db.forEach(item => {
-                if (!cache[item.code]) cache[item.code] = {};
-                if (item.proxy) cache[item.code].sourceType = 'proxy';
-            });
-            renderAll(); 
-            
-            const promises = db.map(item => fetchFastData(item.code));
-            Promise.all(promises).then(() => {
-                ProgressMgr.setPhase1Done(); // 设为 30%
-                db.forEach(item => HeavyLoader.add(item.code));
-            });
-        }
-
-        function removeFund(code) {
-            if(confirm('确定移除该基金吗？')) {
-                db = db.filter(i => i.code !== code);
-                saveDb();
-                renderAll();
-            }
-        }
-
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            const input = prompt('输入关联指数代码 (如 518880)，无需前缀:', item.proxy || '');
+            // [Fix] 17.2: 输入框默认留白，提示语放在prompt标题中
+            const input = prompt(
+                '请输入关联指数代码 (如 515880)\n支持自动补全沪深/港/美股\n\n当前关联: ' + (item.proxy || '无'), 
+                '' // <-- 这里是默认值，设为空字符串
+            );
+            
             if (input !== null) {
                 let val = input.trim();
+                // 17.1 的智能补全逻辑
                 if (/^\d+$/.test(val)) {
-                    if (/^[569]/.test(val)) val = 'sh' + val;
-                    else if (/^[0123]/.test(val)) val = 'sz' + val;
+                    if (val.length === 5) val = 'hk' + val;
+                    else if (/^000/.test(val)) val = 'sh' + val;
+                    else if (/^0/.test(val)) val = 'sz' + val;
+                    else if (/^399/.test(val)) val = 'sz' + val;
+                    else if (/^159/.test(val)) val = 'sz' + val;
+                    else if (/^51/.test(val)) val = 'sh' + val;
+                    else if (/^[69]/.test(val)) val = 'sh' + val;
                     else if (/^[48]/.test(val)) val = 'bj' + val;
                 }
-                item.proxy = val;
-                saveDb();
-                if(cache[code]) { 
-                    cache[code].sourceType = item.proxy ? 'proxy' : '';
-                    cache[code].rtVal = '...'; 
-                    cache[code].rtChange = 0;
-                }
-                renderRow(code);
-                fetchRealTime(code);
+                item.proxy = val; saveDb();
+                if(cache[code]) { cache[code].sourceType = item.proxy ? 'proxy' : ''; cache[code].rtVal = '...'; cache[code].proxyError = false; }
+                renderRow(code); fetchRealTime(code);
             }
         }
 
-        function hardReset() {
-            if(confirm('【警告】重置将清空所有基金数据，恢复到初始状态。确定吗？')) {
-                localStorage.removeItem(STORAGE_KEY);
-                location.reload();
-            }
-        }
-
+        function hardReset() { if(confirm('【警告】重置将清空所有基金数据，恢复到初始状态。确定吗？')) { localStorage.removeItem(STORAGE_KEY); location.reload(); } }
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
-
-        function renderAll() {
-            const tbody = document.getElementById('fundTableBody');
-            tbody.innerHTML = '';
-            const empty = document.getElementById('emptyState');
-            if (db.length === 0) { empty.classList.remove('hidden'); return; }
-            empty.classList.add('hidden');
-            db.forEach(item => {
-                const tr = document.createElement('tr');
-                tr.id = `row-${item.code}`;
-                tr.className = "active:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 bg-white";
-                tr.setAttribute('data-id', item.code);
-                tbody.appendChild(tr);
-                renderRow(item.code);
-            });
-        }
+        function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
+        function toggleEditMode() { isEditMode = !isEditMode; const btn = document.getElementById('editBtn'); const tip = document.getElementById('editTip'); if(isEditMode) { btn.classList.add('bg-blue-100','text-blue-600'); tip.classList.remove('hidden'); sortableInstance = new Sortable(document.getElementById('fundTableBody'), { handle: '.drag-handle', animation: 150, onEnd: (evt) => { const item = db.splice(evt.oldIndex, 1)[0]; db.splice(evt.newIndex, 0, item); saveDb(); } }); } else { btn.classList.remove('bg-blue-100','text-blue-600'); tip.classList.add('hidden'); if(sortableInstance) sortableInstance.destroy(); } renderAll(); }
 
         function renderRow(code) {
-            const tr = document.getElementById(`row-${code}`);
-            if (!tr) return;
-            const item = db.find(i => i.code === code);
-            const data = cache[code] || {};
-
-            const name = data.name || code;
+            const tr = document.getElementById(`row-${code}`); if (!tr) return;
+            const item = db.find(i => i.code === code); const data = cache[code] || {};
             const nav = data.nav || data.officialNav || '--';
-            const navDate = data.navDate || data.officialDate || '--';
-            const rtVal = data.rtVal || '--';
-            const rtChange = data.rtChange || 0;
-            const sourceType = data.sourceType || 'loading';
+            
+            let rtVal = data.rtVal; let rtChange = data.rtChange || 0;
+            if (data.proxyError) { rtVal = data.backupVal || '--'; rtChange = data.backupChange || 0; }
+            else rtVal = rtVal || '--';
 
             const isUp = parseFloat(rtChange) >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500';
@@ -542,79 +336,55 @@
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
             let valLabel = '', subTag = '';
-            if (sourceType === 'proxy') {
+            if (data.proxyError) {
+                valLabel = '<span class="text-red-500 font-bold">⚠️ 无效</span>';
+                subTag = `<div class="text-[10px] text-red-400 font-medium scale-90 origin-right mt-1 whitespace-nowrap">代码无效 ${item.proxy}</div>`;
+            } else if (data.sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">指数</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1 whitespace-nowrap">关联指数 ${item.proxy}</div>`;
-            } else if (sourceType === 'self') {
+            } else if (data.sourceType === 'self') {
                 valLabel = '<span class="text-orange-500 font-bold">拟合</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1">重仓拟合</div>`;
-            } else if (sourceType === 'official') {
+            } else {
                 valLabel = '<span class="text-slate-400">官方</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1">天天基金</div>`;
-            } else {
-                valLabel = '<span class="text-slate-200">...</span>';
             }
 
-            let lastCol = '';
-            if (isEditMode) {
-                lastCol = `<div class="drag-handle cursor-move p-3 text-slate-400 flex justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></div>`;
-            } else {
-                lastCol = `<div class="flex flex-col gap-2 items-center"><button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button><button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`;
-            }
+            let lastCol = isEditMode 
+                ? `<div class="drag-handle cursor-move p-3 text-slate-400 flex justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></div>`
+                : `<div class="flex flex-col gap-2 items-center"><button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button><button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`;
 
             tr.innerHTML = `
                 <td class="py-3 px-3 align-top">
-                    <div class="text-sm font-bold text-slate-700 leading-snug whitespace-normal line-clamp-2 mb-0.5">${name}</div>
+                    <div class="text-sm font-bold text-slate-700 leading-snug whitespace-normal line-clamp-2 mb-0.5">${data.name||code}</div>
                     <div class="text-[10px] text-slate-400 font-mono">${code}</div>
                 </td>
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono text-slate-600 font-bold">${nav}</div>
-                    <div class="text-[10px] text-slate-400 scale-90 origin-right mt-0.5">${navDate}</div>
+                    <div class="text-[10px] text-slate-400 scale-90 origin-right mt-0.5">${data.officialDate||'--'}</div>
                 </td>
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono ${colorClass} font-bold">${rtVal}</div>
                     <div class="text-[10px] scale-90 origin-right mt-0.5">${valLabel}</div>
                 </td>
                 <td class="py-3 px-3 text-right align-top">
-                    <div class="inline-flex items-center justify-center min-w-[56px] px-1.5 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">
-                        ${sign}${rtChange}%
-                    </div>
+                    <div class="inline-flex items-center justify-center min-w-[56px] px-1.5 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">${sign}${rtChange}%</div>
                     ${subTag}
                 </td>
-                <td class="py-3 px-1 text-center align-middle w-10">${lastCol}</td>
-            `;
+                <td class="py-3 px-1 text-center align-middle w-10">${lastCol}</td>`;
         }
 
-        function toggleEditMode() {
-            isEditMode = !isEditMode;
-            const btn = document.getElementById('editBtn');
-            const editTip = document.getElementById('editTip');
-            if (isEditMode) {
-                btn.classList.add('bg-blue-100', 'text-blue-600');
-                editTip.classList.remove('hidden');
-                sortableInstance = new Sortable(document.getElementById('fundTableBody'), {
-                    handle: '.drag-handle', animation: 150,
-                    onEnd: (evt) => {
-                        const item = db.splice(evt.oldIndex, 1)[0];
-                        db.splice(evt.newIndex, 0, item);
-                        saveDb();
-                    }
-                });
-            } else {
-                btn.classList.remove('bg-blue-100', 'text-blue-600');
-                editTip.classList.add('hidden');
-                if (sortableInstance) sortableInstance.destroy();
-            }
-            renderAll();
+        function renderAll() {
+            const tbody = document.getElementById('fundTableBody'); tbody.innerHTML = '';
+            document.getElementById('emptyState').classList.toggle('hidden', db.length > 0);
+            db.forEach(i => {
+                const tr = document.createElement('tr'); tr.id = `row-${i.code}`; tr.className = "active:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 bg-white"; tr.setAttribute('data-id', i.code);
+                tbody.appendChild(tr); renderRow(i.code);
+            });
         }
 
         fullReload();
-        // 自动刷新逻辑不需要变，因为fetchRealTime内部已经处理了tick
-        setInterval(() => {
-            // 这里不需要触发进度条，只更新数据
-            db.forEach(item => fetchRealTime(item.code));
-        }, 15000);
-
+        setInterval(() => { db.forEach(item => fetchRealTime(item.code)); }, 15000);
     </script>
 </body>
 </html>
