@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V13.1</title>
+    <title>基金涨跌监控 V15</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -23,29 +23,34 @@
         .modal-leave-active { opacity: 0; transform: scale(0.95); transition: all 0.15s ease-in; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 antialiased">
+<body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-100">
     <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-32 relative">
         
         <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-all">
-            <div class="flex justify-between items-center mb-1">
+            <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
-                    <h1 class="text-lg font-bold text-slate-800">基金涨跌监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono">V13.1 Fix</span>
+                    <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金涨跌监控</h1>
+                    <span id="globalStatus" class="text-[10px] text-white bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">V15.0</span>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
+                    <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition hover:bg-slate-200">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
                     </button>
-                    <button onclick="fullReload()" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:bg-slate-200 transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
-                    <button onclick="hardReset()" class="p-2 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition">
+                    <button onclick="hardReset()" class="p-2 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition hover:text-red-600">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
             </div>
+
+            <div class="flex justify-between items-center bg-slate-50 rounded-lg p-2 mb-1">
+                <span class="text-xs text-slate-500 font-medium ml-1">重仓拟合估算</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="fittingToggle" class="sr-only peer" onchange="toggleFitting()">
+                    <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+            </div>
             
-            <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">拖拽排序 · 点击按钮完成</div>
+            <div class="hidden text-center text-xs text-blue-500 font-bold py-2 animate-pulse" id="editTip">按住右侧三横杠拖动排序 · 点击按钮完成</div>
             <div class="loading-bar"><div id="progressBar" class="loading-progress"></div></div>
         </header>
 
@@ -63,30 +68,36 @@
                     </thead>
                     <tbody id="fundTableBody" class="divide-y divide-slate-50"></tbody>
                 </table>
-                <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">暂无数据，请添加基金代码</div>
+                <div id="emptyState" class="hidden py-20 text-center">
+                    <div class="inline-block p-3 bg-slate-50 rounded-full mb-3 text-slate-300">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    </div>
+                    <p class="text-slate-400 text-sm">点击右下角按钮添加基金</p>
+                </div>
             </div>
-            <p class="text-center text-[10px] text-slate-300 mt-6 px-4">
+            
+            <p class="text-center text-[10px] text-slate-300 mt-6 px-4 leading-relaxed">
                 数据源：腾讯财经(实时) + 东方财富(K线)
             </p>
         </main>
 
-        <button onclick="openAddModal()" class="fixed bottom-8 right-8 w-14 h-14 bg-blue-600 rounded-full shadow-lg shadow-blue-500/30 flex items-center justify-center text-white z-40 hover:bg-blue-700 active:scale-90 transition-transform duration-200">
+        <button onclick="openAddModal()" class="fixed bottom-8 right-8 w-14 h-14 bg-blue-600 rounded-full shadow-lg shadow-blue-500/30 flex items-center justify-center text-white z-40 hover:bg-blue-700 active:scale-90 transition-all duration-200 tap-transparent">
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
         </button>
 
         <div id="addModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
-            <div class="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onclick="closeAddModal()"></div>
+            <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onclick="closeAddModal()"></div>
             <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
                 <div class="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all sm:my-8 w-full max-w-sm p-6 modal-enter" id="modalContent">
-                    <h3 class="text-lg font-bold leading-6 text-gray-900 mb-4">添加新基金</h3>
+                    <h3 class="text-lg font-bold leading-6 text-slate-800 mb-4">添加监控对象</h3>
                     <div class="mt-2">
                         <input type="number" id="modalInput" inputmode="numeric" placeholder="请输入6位代码 (如 005827)" 
-                               class="w-full border border-gray-300 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
-                        <p class="text-xs text-gray-400 mt-2 text-left">支持股票型、混合型及指数ETF联接基金</p>
+                               class="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all placeholder:text-slate-300">
+                        <p class="text-xs text-slate-400 mt-3 ml-1">支持：股票型、混合型、指数ETF联接、QDII等</p>
                     </div>
                     <div class="mt-6 flex gap-3">
-                        <button type="button" onclick="closeAddModal()" class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none">取消</button>
-                        <button type="button" onclick="confirmAdd()" class="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus:outline-none">确认添加</button>
+                        <button type="button" onclick="closeAddModal()" class="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50 active:scale-95 transition">取消</button>
+                        <button type="button" onclick="confirmAdd()" class="flex-1 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-md shadow-blue-200 hover:bg-blue-700 active:scale-95 transition">确认</button>
                     </div>
                 </div>
             </div>
@@ -94,17 +105,41 @@
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v13_1';
+        const STORAGE_KEY = 'fund_monitor_permanent'; 
         const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
-        
         let db = [];
-        try { db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB; } catch(e) { db = DEFAULT_DB; }
-        
+
+        // 1. 数据初始化
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                db = JSON.parse(raw);
+            } else {
+                // 迁移旧数据逻辑...
+                const oldKeys = ['my_fund_v13_1', 'my_fund_v13'];
+                let recovered = null;
+                for (let key of oldKeys) {
+                    const oldRaw = localStorage.getItem(key);
+                    if (oldRaw) {
+                        try { recovered = JSON.parse(oldRaw); if(recovered.length>0) break; } catch(e){}
+                    }
+                }
+                db = recovered || DEFAULT_DB;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); 
+            }
+        } catch(e) { db = DEFAULT_DB; }
+
         let cache = {};
         let isEditMode = false;
         let sortableInstance = null;
+        
+        // [新增] 拟合开关状态
+        let isFittingEnabled = JSON.parse(localStorage.getItem('fitting_enabled') || 'true');
+        // 初始化开关UI
+        document.getElementById('fittingToggle').checked = isFittingEnabled;
 
-        // --- 1. 极速基础数据 ---
+        // --- 核心逻辑 ---
+
         function fetchFastData(code) {
             return new Promise((resolve) => {
                 const script = document.createElement('script');
@@ -117,23 +152,23 @@
                     }
                     if (!cache[code]) cache[code] = {};
                     cache[code].name = data.name;
-                    cache[code].officialNav = data.dwjz;
+                    cache[code].officialNav = data.dwjz; 
                     
-                    // [BUG FIX] 之前取的是 gztime (估值时间 02-02)，现在改取 jzrq (净值日期 01-29)
-                    if (data.jzrq) {
-                        cache[code].officialDate = data.jzrq.substring(5); // 2026-01-29 -> 01-29
-                    } else {
-                        cache[code].officialDate = '--';
-                    }
+                    if (data.jzrq) cache[code].officialDate = data.jzrq.substring(5);
+                    else cache[code].officialDate = '--';
                     
-                    if (cache[code].sourceType !== 'proxy') {
+                    // 如果当前没有处于“高级模式”（ETF或自研），则直接使用官方数据
+                    // 注意：这里先存入官方数据，后续 fetchRealTime 会根据开关决定是否覆盖
+                    if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
                         cache[code].rtVal = data.gsz;
                         cache[code].rtChange = data.gszzl;
                         cache[code].sourceType = 'official';
-                    } else {
-                        cache[code].backupVal = data.gsz;
-                        cache[code].backupChange = data.gszzl;
                     }
+                    
+                    // 始终备份官方数据
+                    cache[code].backupVal = data.gsz;
+                    cache[code].backupChange = data.gszzl;
+                    
                     renderRow(code);
                     resolve();
                 };
@@ -145,13 +180,19 @@
             });
         }
 
-        // --- 2. 重型数据 (持仓) ---
         const HeavyLoader = {
             queue: [],
             isRunning: false,
             add(code) {
+                // 如果是 Proxy 模式，跳过 K 线下载
                 if (cache[code].sourceType === 'proxy') { fetchRealTime(code); return; }
+                
+                // [新增] 如果开关关闭，且没有proxy，也跳过 K 线下载，直接用官方
+                if (!isFittingEnabled) { fetchRealTime(code); return; }
+
+                // 如果已有持仓，跳过
                 if (cache[code].holdings) { fetchRealTime(code); return; }
+                
                 this.queue.push(code);
                 this.run();
             },
@@ -176,7 +217,9 @@
                     window.Data_fundSharesPositions = null;
                     window.fS_name = null;
                     try { document.body.removeChild(script); } catch(e){}
-                    if (cache[code].sourceType !== 'proxy') fetchRealTime(code);
+                    
+                    // 无论成功失败，都尝试更新实时数据（会根据开关状态决策）
+                    fetchRealTime(code);
                     this.isRunning = false;
                     this.run();
                 };
@@ -208,12 +251,12 @@
             }
         };
 
-        // --- 3. 实时数据 (腾讯源) ---
         function fetchRealTime(code) {
             const item = db.find(i => i.code === code);
             const data = cache[code];
             if (!item) return;
 
+            // 分支 A: ETF 代理 (最高优先级，不受拟合开关影响)
             if (item.proxy) {
                 cache[code].sourceType = 'proxy';
                 renderRow(code); 
@@ -228,13 +271,14 @@
                     }
                 });
             }
-            else if (data.holdings && data.holdings.length > 0) {
+            // 分支 B: 自研持仓估值 ([新增] 必须开关开启)
+            else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
                 const queryList = data.holdings.map(s => {
                     let prefix = '';
-                    if (/^[569]/.test(s.code)) prefix = 'sh';
+                    if (s.code.length === 5) prefix = 'hk';
+                    else if (/^[569]/.test(s.code)) prefix = 'sh';
                     else if (/^[0123]/.test(s.code)) prefix = 'sz';
                     else if (/^[48]/.test(s.code)) prefix = 'bj';
-                    else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'hk';
                     return prefix + s.code;
                 }).join(',');
 
@@ -246,19 +290,21 @@
                     let validCount = 0;
                     data.holdings.forEach(stock => {
                         let prefix = '';
-                        if (/^[569]/.test(stock.code)) prefix = 'sh';
+                        if (stock.code.length === 5) prefix = 'hk';
+                        else if (/^[569]/.test(stock.code)) prefix = 'sh';
                         else if (/^[0123]/.test(stock.code)) prefix = 'sz';
                         else if (/^[48]/.test(stock.code)) prefix = 'bj';
-                        else if (/^0/.test(stock.code)) prefix = 'hk';
                         
                         const val = window[`v_${prefix}${stock.code}`];
                         if (val) {
                             validCount++;
                             const parts = val.split('~');
-                            const current = parseFloat(parts[3]);
-                            const prevClose = parseFloat(parts[4]);
+                            let current, prevClose, pct = 0;
                             
-                            let pct = 0;
+                            // 腾讯接口兼容性处理
+                            current = parseFloat(parts[3]);
+                            prevClose = parseFloat(parts[4]);
+                            
                             if (prevClose > 0 && current > 0) {
                                 pct = ((current - prevClose) / prevClose) * 100;
                             }
@@ -281,6 +327,7 @@
                 script.onerror = () => fallbackToOfficial(code);
                 document.body.appendChild(script);
             }
+            // 分支 C: 官方兜底 (开关关闭，或没有持仓数据)
             else {
                 fallbackToOfficial(code);
             }
@@ -321,12 +368,33 @@
             renderRow(code);
         }
 
-        // --- UI ---
+        // [新增] 切换拟合开关
+        function toggleFitting() {
+            isFittingEnabled = document.getElementById('fittingToggle').checked;
+            localStorage.setItem('fitting_enabled', isFittingEnabled);
+            
+            // 重新计算所有基金
+            db.forEach(item => {
+                // 如果之前是自研模式，现在关了，需要重置状态以便 fallback 触发
+                if (cache[item.code] && cache[item.code].sourceType === 'self') {
+                    cache[item.code].sourceType = ''; // 清空状态
+                }
+                // 重新加载重型队列（如果开启了开关且还没持仓）
+                if (isFittingEnabled && !item.proxy && (!cache[item.code] || !cache[item.code].holdings)) {
+                    HeavyLoader.add(item.code);
+                } else {
+                    // 直接刷新实时数据
+                    fetchRealTime(item.code);
+                }
+            });
+        }
+
+        // UI & 交互
         function openAddModal() {
             document.getElementById('addModal').classList.remove('hidden');
             document.getElementById('modalContent').classList.remove('modal-leave-active');
             document.getElementById('modalContent').classList.add('modal-enter-active');
-            document.getElementById('modalInput').focus();
+            setTimeout(() => document.getElementById('modalInput').focus(), 50);
         }
 
         function closeAddModal() {
@@ -349,7 +417,7 @@
                     closeAddModal();
                     input.value = '';
                 } else {
-                    alert('该基金已存在列表');
+                    alert('该基金已在列表中');
                 }
             } else {
                 alert('请输入6位数字代码');
@@ -379,7 +447,7 @@
         }
 
         function removeFund(code) {
-            if(confirm('移除?')) {
+            if(confirm('确定移除该基金吗？')) {
                 db = db.filter(i => i.code !== code);
                 saveDb();
                 renderAll();
@@ -388,7 +456,7 @@
 
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            const input = prompt('输入 ETF 代码 (如 518880):', item.proxy || '');
+            const input = prompt('输入 ETF/股票 代码 (如 518880)，无需前缀:', item.proxy || '');
             if (input !== null) {
                 let val = input.trim();
                 if (/^\d+$/.test(val)) {
@@ -410,7 +478,7 @@
         }
 
         function hardReset() {
-            if(confirm('重置会清空所有数据，确定吗？')) {
+            if(confirm('【警告】重置将清空所有基金数据，恢复到初始状态。确定吗？')) {
                 localStorage.removeItem(STORAGE_KEY);
                 location.reload();
             }
