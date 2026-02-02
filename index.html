@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V16.1</title>
+    <title>基金涨跌监控 V16.3</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -30,7 +30,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V16.1</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">V16.3</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -426,7 +426,7 @@
 
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            const input = prompt('输入 ETF/股票 代码 (如 518880)，无需前缀:', item.proxy || '');
+            const input = prompt('输入关联指数代码 (如 518880)，无需前缀:', item.proxy || '');
             if (input !== null) {
                 let val = input.trim();
                 if (/^\d+$/.test(val)) {
@@ -491,15 +491,16 @@
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
             let valLabel = '', subTag = '';
+            // [无图标文案]
             if (sourceType === 'proxy') {
-                valLabel = '<span class="text-blue-500 font-bold">⚓ETF</span>';
-                subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ETF</div>`;
+                valLabel = '<span class="text-blue-500 font-bold">指数</span>';
+                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1 whitespace-nowrap">关联指数 ${item.proxy}</div>`;
             } else if (sourceType === 'self') {
-                valLabel = '<span class="text-orange-500 font-bold">⚡拟合</span>';
-                subTag = `<div class="text-[10px] text-slate-400 scale-90 origin-right mt-1">⚡ 拟合</div>`;
+                valLabel = '<span class="text-orange-500 font-bold">拟合</span>';
+                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1">重仓拟合</div>`;
             } else if (sourceType === 'official') {
-                valLabel = '<span class="text-slate-400">🏛️官方</span>';
-                subTag = `<div class="text-[10px] text-slate-400 scale-90 origin-right mt-1">🏛️ 官方</div>`;
+                valLabel = '<span class="text-slate-400">官方</span>';
+                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1">天天基金</div>`;
             } else {
                 valLabel = '<span class="text-slate-200">...</span>';
             }
