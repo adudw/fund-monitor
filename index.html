@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>核心资产看板 V10</title>
+    <meta name="referrer" content="no-referrer">
+    <title>核心资产看板 V10.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -12,23 +13,18 @@
         .bg-up { background-color: #fef2f2; }
         .bg-down { background-color: #f0fdf4; }
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
-        
-        /* 拖拽时的样式优化 */
-        .sortable-ghost { opacity: 0.4; background: #f1f5f9; } /* 拖动占位符 */
-        .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); } /* 正在拖动的元素 */
-        
-        /* 编辑模式下的过渡动画 */
-        .action-col, .handle-col { transition: all 0.2s ease; }
+        .sortable-ghost { opacity: 0.4; background: #f1f5f9; }
+        .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
     <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-20 relative">
         
-        <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-colors duration-300" id="mainHeader">
+        <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-colors duration-300">
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">V10.0 Pro</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-red-500 px-1.5 py-0.5 rounded font-mono">V10.1 Hotfix</span>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
@@ -59,31 +55,32 @@
                             <th class="py-3 px-2 text-right">净值</th>
                             <th class="py-3 px-2 text-right">估值</th>
                             <th class="py-3 px-3 text-right">涨跌</th>
-                            <th class="w-10"></th> </tr>
+                            <th class="w-10"></th>
+                        </tr>
                     </thead>
                     <tbody id="fundTableBody" class="divide-y divide-slate-50"></tbody>
                 </table>
                 <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">暂无数据，请添加基金代码</div>
             </div>
             <p class="text-center text-[10px] text-slate-300 mt-6 px-4">
-                官方净值(K线) | 实时估值(ETF/自研重仓)
+                官方净值(K线) | 智能混合估值源
             </p>
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v10';
+        const STORAGE_KEY = 'my_fund_v10_1';
         const DEFAULT_DB = [
-            { code: '005827', proxy: '' },       // 易方达蓝筹
-            { code: '000217', proxy: 'sh518880' } // 华安黄金
+            { code: '005827', proxy: '' },       
+            { code: '000217', proxy: 'sh518880' } 
         ];
 
         let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
         let cache = {};
-        let isEditMode = false; // 状态：是否处于排序模式
-        let sortableInstance = null; // Sortable 实例
+        let isEditMode = false;
+        let sortableInstance = null;
 
-        // --- 1. 基础信息加载器 ---
+        // 1. 基础信息 (名字)
         function fetchBasicInfo(code) {
             const script = document.createElement('script');
             script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
@@ -96,7 +93,7 @@
             document.body.appendChild(script);
         }
 
-        // --- 2. K线 & 持仓加载器 ---
+        // 2. 核心加载器
         const NavLoader = {
             queue: [],
             isRunning: false,
@@ -116,7 +113,6 @@
                 script.onload = () => {
                     if (!cache[code]) cache[code] = {};
 
-                    // A. 官方净值
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
                         const dateObj = new Date(last.x);
@@ -124,7 +120,6 @@
                         cache[code].navDate = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
                     }
 
-                    // B. 持仓结构
                     if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
                         const latestReport = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
                         const stocks = [];
@@ -150,29 +145,39 @@
                     this.isRunning = false;
                     this.run();
                 };
-                script.onerror = () => { this.isRunning = false; this.run(); };
+                script.onerror = () => { 
+                    // 即使加载失败，也要尝试去获取实时估值(走兜底)
+                    decideAndFetchRealTime(code);
+                    this.isRunning = false; 
+                    this.run(); 
+                };
                 document.body.appendChild(script);
             }
         };
 
-        // --- 3. 实时估值引擎 ---
+        // 3. 智能决策引擎
         function decideAndFetchRealTime(code) {
             const item = db.find(i => i.code === code);
-            const data = cache[code];
-            if (!item || !data) return;
+            const data = cache[code] || {}; // 确保data存在
 
+            // 策略 A: ETF 代理
             if (item.proxy) {
                 cache[code].sourceType = 'proxy'; 
                 renderRow(code); 
                 fetchProxyData(code, item.proxy);
             } 
+            // 策略 B: 自研估值 (前提: 必须获取到了持仓数据)
             else if (data.holdings && data.holdings.length > 0) {
                 cache[code].sourceType = 'self';
                 renderRow(code);
                 fetchSelfValuation(code, data.holdings);
             }
+            // 策略 C: 官方估值兜底 (Fallback)
+            // 如果 Pingzhongdata 挂了，或者没持仓，就用这个
             else {
+                cache[code].sourceType = 'official';
                 renderRow(code);
+                fetchOfficialFallback(code);
             }
         }
 
@@ -184,6 +189,7 @@
                 const dataStr = window[`hq_str_${proxyCode}`];
                 if (dataStr) {
                     const parts = dataStr.split(',');
+                    // 兼容: 有些时候 parts[3] 为 0，比如集合竞价阶段或停牌
                     const current = parseFloat(parts[3] == 0 ? parts[2] : parts[3]);
                     const yesterday = parseFloat(parts[2]);
                     let percent = 0;
@@ -202,7 +208,7 @@
                 let prefix = '';
                 if (/^[569]/.test(s.code)) prefix = 'sh';
                 else if (/^[0123]/.test(s.code)) prefix = 'sz';
-                else if (/^4|8/.test(s.code)) prefix = 'bj';
+                else if (/^[48]/.test(s.code)) prefix = 'bj';
                 else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'rt_hk';
                 return prefix + s.code;
             }).join(',');
@@ -216,8 +222,8 @@
                     let prefix = '';
                     if (/^[569]/.test(stock.code)) prefix = 'sh';
                     else if (/^[0123]/.test(stock.code)) prefix = 'sz';
-                    else if (/^4|8/.test(stock.code)) prefix = 'bj';
-                    else if (/^0/.test(stock.code) && stock.code.length === 5) prefix = 'rt_hk';
+                    else if (/^[48]/.test(stock.code)) prefix = 'bj';
+                    else if (/^0/.test(stock.code)) prefix = 'rt_hk';
                     
                     const dataStr = window[`hq_str_${prefix}${stock.code}`];
                     if (dataStr) {
@@ -228,6 +234,7 @@
                         } else {
                             current = parseFloat(parts[3]); prevClose = parseFloat(parts[2]);
                         }
+                        // 修正：只有当开盘后才有数据
                         if (prevClose > 0 && current > 0) {
                             changePct = ((current - prevClose) / prevClose) * 100;
                         }
@@ -246,7 +253,31 @@
             document.body.appendChild(script);
         }
 
-        // --- 排序交互逻辑 (新功能) ---
+        // [新增] 官方估值兜底函数
+        function fetchOfficialFallback(code) {
+            const script = document.createElement('script');
+            // 注意：这里使用 fundgz 接口作为最后的防线
+            script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+            // 覆盖全局回调
+            const originalCallback = window.jsonpgz;
+            window.jsonpgz = function(data) {
+                if (data.fundcode !== code) {
+                    if(originalCallback) originalCallback(data);
+                    return;
+                }
+                
+                // 只有当是 'official' 模式才更新数据
+                if (cache[code].sourceType === 'official') {
+                    cache[code].rtVal = data.gsz;
+                    cache[code].rtChange = data.gszzl;
+                    if(!cache[code].name) cache[code].name = data.name;
+                    renderRow(code);
+                }
+            };
+            document.body.appendChild(script);
+        }
+
+        // --- 业务与交互 ---
         function toggleEditMode() {
             isEditMode = !isEditMode;
             const btn = document.getElementById('editBtn');
@@ -254,50 +285,41 @@
             const editTip = document.getElementById('editTip');
             
             if (isEditMode) {
-                // 进入编辑模式
                 btn.classList.add('bg-blue-100', 'text-blue-600');
-                btn.innerHTML = '完成'; // 更改按钮文字
-                addBar.classList.add('hidden'); // 隐藏添加栏
+                btn.innerHTML = '完成';
+                addBar.classList.add('hidden');
                 editTip.classList.remove('hidden');
-                
-                // 启用 Sortable
                 initSortable();
             } else {
-                // 退出编辑模式
                 btn.classList.remove('bg-blue-100', 'text-blue-600');
                 btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>';
                 addBar.classList.remove('hidden');
                 editTip.classList.add('hidden');
-                
-                // 销毁 Sortable，恢复正常
                 if (sortableInstance) sortableInstance.destroy();
             }
-            // 重新渲染每一行，切换最后一列的显示状态
             renderAll();
         }
 
         function initSortable() {
             const tbody = document.getElementById('fundTableBody');
             sortableInstance = new Sortable(tbody, {
-                handle: '.drag-handle', // 只能拖拽这个手柄
+                handle: '.drag-handle',
                 animation: 150,
                 ghostClass: 'sortable-ghost',
                 dragClass: 'sortable-drag',
                 onEnd: function (evt) {
-                    // 拖拽结束，更新数据源顺序
                     const item = db.splice(evt.oldIndex, 1)[0];
                     db.splice(evt.newIndex, 0, item);
-                    saveDb(); // 保存新顺序
-                    // 注意：不需要 renderAll，Sortable 已经帮我们移动了 DOM
+                    saveDb();
                 }
             });
         }
 
-        // --- 业务逻辑 ---
         function refreshAll() {
             updateStatus('更新中...');
             db.forEach(item => {
                 if(!cache[item.code]?.name) fetchBasicInfo(item.code);
+                // 强制重新决策，防止数据源状态卡死
                 if (cache[item.code] && cache[item.code].holdings) {
                     decideAndFetchRealTime(item.code);
                 } else {
@@ -330,7 +352,7 @@
 
         function bindProxy(code) {
             const item = db.find(i => i.code === code);
-            const input = prompt('输入 ETF 代码 (如 518880)，无需前缀:', item.proxy || '');
+            const input = prompt('输入 ETF 代码 (如 518880):', item.proxy || '');
             if (input !== null) {
                 let val = input.trim();
                 if (/^\d+$/.test(val)) {
@@ -343,17 +365,17 @@
                 if(cache[code]) { 
                     delete cache[code].rtVal; 
                     delete cache[code].rtChange; 
-                    cache[code].sourceType = item.proxy ? 'proxy' : 'self'; 
+                    cache[code].sourceType = ''; // 重置状态
                 }
-                renderRow(code);
-                refreshAll();
+                renderRow(code); // 清空旧数据
+                refreshAll();    // 重新获取
             }
         }
 
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
         function updateStatus(msg) { document.getElementById('globalStatus').innerText = msg; }
 
-        // --- 渲染逻辑 ---
+        // 渲染
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
@@ -364,7 +386,6 @@
                 const tr = document.createElement('tr');
                 tr.id = `row-${item.code}`;
                 tr.className = "active:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 bg-white";
-                // 加上 data-id 方便 Sortable 识别
                 tr.setAttribute('data-id', item.code);
                 tbody.appendChild(tr);
                 renderRow(item.code);
@@ -380,18 +401,16 @@
             const name = data.name || code;
             const nav = data.nav || '--';
             const navDate = data.navDate || '--';
-            
             const rtVal = data.rtVal || '--';
             const rtChange = data.rtChange || 0;
-            const sourceType = data.sourceType || '';
+            const sourceType = data.sourceType || ''; // proxy, self, official
 
             const isUp = parseFloat(rtChange) >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500';
             const bgClass = isUp ? 'bg-red-50' : 'bg-green-50';
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
-            let subTag = '';
-            let valLabel = '';
+            let subTag = '', valLabel = '';
 
             if (sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">⚓ETF</span>';
@@ -399,31 +418,22 @@
             } else if (sourceType === 'self') {
                 valLabel = '<span class="text-orange-500 font-bold">⚡自研</span>';
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">重仓透视</div>`;
+            } else if (sourceType === 'official') {
+                valLabel = '<span class="text-slate-400">官方</span>';
+                subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">兜底接口</div>`;
             } else {
                 valLabel = '<span class="text-slate-200">--</span>';
             }
 
-            // [关键逻辑] 根据 isEditMode 渲染最后一列
             let lastColHtml = '';
             if (isEditMode) {
-                // 编辑模式：显示拖拽手柄
-                lastColHtml = `
-                    <div class="drag-handle cursor-move p-3 text-slate-400 hover:text-slate-600 flex justify-center">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                    </div>
-                `;
+                lastColHtml = `<div class="drag-handle cursor-move p-3 text-slate-400 hover:text-slate-600 flex justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></div>`;
             } else {
-                // 正常模式：显示操作按钮
                 lastColHtml = `
                     <div class="flex flex-col gap-2 items-center">
-                        <button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                        </button>
-                        <button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        </button>
-                    </div>
-                `;
+                        <button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button>
+                        <button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    </div>`;
             }
 
             tr.innerHTML = `
@@ -431,31 +441,24 @@
                     <div class="text-sm font-bold text-slate-700 leading-snug whitespace-normal line-clamp-2 mb-0.5">${name}</div>
                     <div class="text-[10px] text-slate-400 font-mono">${code}</div>
                 </td>
-                
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono text-slate-600 font-bold">${nav}</div>
                     <div class="text-[10px] text-slate-400 scale-90 origin-right mt-0.5">${navDate}</div>
                 </td>
-
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono ${colorClass} font-bold">${rtVal}</div>
                     <div class="text-[10px] scale-90 origin-right mt-0.5">${valLabel}</div>
                 </td>
-
                 <td class="py-3 px-3 text-right align-top">
                     <div class="inline-flex items-center justify-center min-w-[56px] px-1.5 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">
                         ${sign}${rtChange}%
                     </div>
                     ${subTag}
                 </td>
-
-                <td class="py-3 px-1 text-center align-middle w-10">
-                    ${lastColHtml}
-                </td>
+                <td class="py-3 px-1 text-center align-middle w-10">${lastColHtml}</td>
             `;
         }
 
-        renderAll();
         refreshAll();
         setInterval(refreshAll, 60000);
     </script>
