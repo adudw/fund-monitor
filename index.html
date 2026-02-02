@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V16.3</title>
+    <title>基金涨跌监控 V17.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -15,8 +15,22 @@
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
         .sortable-ghost { opacity: 0.4; background: #f1f5f9; }
         .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .loading-bar { height: 2px; width: 100%; background: #f1f5f9; position: absolute; bottom: 0; left: 0; }
-        .loading-progress { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
+        
+        /* 进度条容器 */
+        .loading-container { 
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; 
+            background: transparent; overflow: hidden; pointer-events: none; 
+            opacity: 1; transition: opacity 0.5s ease-out;
+        }
+        /* 进度条本体 */
+        .loading-progress { 
+            height: 100%; background: #2563eb; 
+            width: 0%; transition: width 0.3s ease-out;
+            box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+        }
+        /* 完成后隐藏 */
+        .loading-container.finished { opacity: 0; }
+
         .modal-enter { opacity: 0; transform: scale(0.95); }
         .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
         .modal-leave { opacity: 1; transform: scale(1); }
@@ -30,7 +44,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">V16.3</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V17.0</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -52,7 +66,10 @@
             </div>
             
             <div class="hidden text-center text-xs text-blue-500 font-bold py-2 animate-pulse" id="editTip">按住右侧三横杠拖动排序 · 点击按钮完成</div>
-            <div class="loading-bar"><div id="progressBar" class="loading-progress"></div></div>
+            
+            <div id="progressContainer" class="loading-container">
+                <div id="progressBar" class="loading-progress"></div>
+            </div>
         </header>
 
         <main class="p-2 md:p-6">
@@ -76,7 +93,6 @@
                     <p class="text-slate-400 text-sm">点击右下角按钮添加基金</p>
                 </div>
             </div>
-            
             <p class="text-center text-[10px] text-slate-300 mt-6 px-4 leading-relaxed">
                 数据源：腾讯财经(实时) + 东方财富(K线)
             </p>
@@ -131,6 +147,39 @@
         let isFittingEnabled = JSON.parse(localStorage.getItem('fitting_enabled') || 'false');
         document.getElementById('fittingToggle').checked = isFittingEnabled;
 
+        // [New] 全局进度管理器
+        const ProgressMgr = {
+            total: 0,
+            completed: 0,
+            init(total) {
+                this.total = total;
+                this.completed = 0;
+                // 显示进度条
+                document.getElementById('progressContainer').classList.remove('finished');
+                this.update(5); // 初始 5%
+            },
+            tick() {
+                this.completed++;
+                // 计算进度: 30% 是基础数据，剩下 70% 分给各个基金
+                let pct = 30 + (this.completed / this.total * 70);
+                this.update(pct);
+            },
+            setPhase1Done() {
+                this.update(30);
+            },
+            update(pct) {
+                if (pct > 100) pct = 100;
+                document.getElementById('progressBar').style.width = pct + '%';
+                if (pct >= 100) {
+                    setTimeout(() => {
+                        document.getElementById('progressContainer').classList.add('finished');
+                        // 归零以便下次动画
+                        setTimeout(() => { document.getElementById('progressBar').style.width = '0%'; }, 500);
+                    }, 500);
+                }
+            }
+        };
+
         function fetchFastData(code) {
             return new Promise((resolve) => {
                 const script = document.createElement('script');
@@ -169,22 +218,19 @@
             queue: [],
             isRunning: false,
             add(code) {
+                // 如果跳过，直接去下一步，并手动告知进度
                 if (cache[code].sourceType === 'proxy') { fetchRealTime(code); return; }
                 if (!isFittingEnabled) { fetchRealTime(code); return; }
                 if (cache[code].holdings) { fetchRealTime(code); return; }
+                
                 this.queue.push(code);
                 this.run();
             },
             run() {
-                if (this.isRunning || this.queue.length === 0) {
-                    if (this.queue.length === 0) updateProgress(100);
-                    return;
-                }
+                if (this.isRunning || this.queue.length === 0) return;
                 this.isRunning = true;
                 const code = this.queue.shift();
-                const total = db.length;
-                updateProgress(((total - this.queue.length) / total) * 100);
-
+                
                 const script = document.createElement('script');
                 let isFinished = false;
 
@@ -195,7 +241,9 @@
                     window.Data_fundSharesPositions = null;
                     window.fS_name = null;
                     try { document.body.removeChild(script); } catch(e){}
-                    fetchRealTime(code);
+                    
+                    fetchRealTime(code); // 这里去下一步
+                    
                     this.isRunning = false;
                     this.run();
                 };
@@ -228,9 +276,14 @@
         };
 
         function fetchRealTime(code) {
+            // [Fix] 无论成功失败，只要这个函数跑完了，就说明这个基金处理完毕
+            // 我们在 callback 或者 error 里调用 ProgressMgr.tick()
+            
             const item = db.find(i => i.code === code);
             const data = cache[code];
-            if (!item) return;
+            if (!item) { ProgressMgr.tick(); return; }
+
+            const onDone = () => { ProgressMgr.tick(); };
 
             if (item.proxy) {
                 cache[code].sourceType = 'proxy';
@@ -244,6 +297,7 @@
                     } else {
                         fallbackToOfficial(code);
                     }
+                    onDone();
                 });
             }
             else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
@@ -273,9 +327,9 @@
                         if (val) {
                             validCount++;
                             const parts = val.split('~');
-                            let current, prevClose, pct = 0;
-                            current = parseFloat(parts[3]);
-                            prevClose = parseFloat(parts[4]);
+                            let current = parseFloat(parts[3]);
+                            let prevClose = parseFloat(parts[4]);
+                            let pct = 0;
                             if (prevClose > 0 && current > 0) {
                                 pct = ((current - prevClose) / prevClose) * 100;
                             }
@@ -296,15 +350,18 @@
                     } else {
                         fallbackToOfficial(code);
                     }
+                    onDone();
                 };
                 script.onerror = () => {
                     try { document.body.removeChild(script); } catch(e){}
                     fallbackToOfficial(code);
+                    onDone();
                 };
                 document.body.appendChild(script);
             }
             else {
                 fallbackToOfficial(code);
+                onDone();
             }
         }
 
@@ -350,16 +407,7 @@
         function toggleFitting() {
             isFittingEnabled = document.getElementById('fittingToggle').checked;
             localStorage.setItem('fitting_enabled', isFittingEnabled);
-            db.forEach(item => {
-                if (cache[item.code] && cache[item.code].sourceType === 'self') {
-                    cache[item.code].sourceType = ''; 
-                }
-                if (isFittingEnabled && !item.proxy && (!cache[item.code] || !cache[item.code].holdings)) {
-                    HeavyLoader.add(item.code);
-                } else {
-                    fetchRealTime(item.code);
-                }
-            });
+            fullReload(); // 切换开关后重新走一遍流程，触发进度条
         }
 
         function openAddModal() {
@@ -385,6 +433,7 @@
                     db.unshift({ code: code, proxy: '' });
                     saveDb();
                     renderAll();
+                    // 添加新基金时，单独触发流程，暂不影响全局进度条
                     fetchFastData(code).then(() => HeavyLoader.add(code));
                     closeAddModal();
                     input.value = '';
@@ -401,7 +450,9 @@
         });
 
         function fullReload() {
-            updateProgress(10);
+            // [Fix] 初始化进度条总数
+            ProgressMgr.init(db.length);
+            
             HeavyLoader.queue = [];
             HeavyLoader.isRunning = false;
             db.forEach(item => {
@@ -409,9 +460,10 @@
                 if (item.proxy) cache[item.code].sourceType = 'proxy';
             });
             renderAll(); 
+            
             const promises = db.map(item => fetchFastData(item.code));
             Promise.all(promises).then(() => {
-                updateProgress(30);
+                ProgressMgr.setPhase1Done(); // 设为 30%
                 db.forEach(item => HeavyLoader.add(item.code));
             });
         }
@@ -454,7 +506,6 @@
         }
 
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
-        function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
 
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
@@ -491,7 +542,6 @@
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
             let valLabel = '', subTag = '';
-            // [无图标文案]
             if (sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">指数</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1 whitespace-nowrap">关联指数 ${item.proxy}</div>`;
@@ -559,7 +609,9 @@
         }
 
         fullReload();
+        // 自动刷新逻辑不需要变，因为fetchRealTime内部已经处理了tick
         setInterval(() => {
+            // 这里不需要触发进度条，只更新数据
             db.forEach(item => fetchRealTime(item.code));
         }, 15000);
 
