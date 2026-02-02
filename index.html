@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V15</title>
+    <title>基金涨跌监控 V15.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -27,27 +27,28 @@
     <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-32 relative">
         
         <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-all">
-            <div class="flex justify-between items-center mb-3">
+            <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金涨跌监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">V15.0</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V15.1</span>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition hover:bg-slate-200">
+
+                <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1.5 bg-slate-100 rounded-full pl-3 pr-1 py-1 mr-1">
+                        <span class="text-[10px] text-slate-500 font-bold">拟合</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="fittingToggle" class="sr-only peer" onchange="toggleFitting()">
+                            <div class="w-7 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+
+                    <button onclick="toggleEditMode()" id="editBtn" class="p-1.5 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition hover:bg-slate-200">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
                     </button>
-                    <button onclick="hardReset()" class="p-2 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition hover:text-red-600">
+                    <button onclick="hardReset()" class="p-1.5 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition hover:text-red-600">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
-            </div>
-
-            <div class="flex justify-between items-center bg-slate-50 rounded-lg p-2 mb-1">
-                <span class="text-xs text-slate-500 font-medium ml-1">重仓拟合估算</span>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="fittingToggle" class="sr-only peer" onchange="toggleFitting()">
-                    <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
             </div>
             
             <div class="hidden text-center text-xs text-blue-500 font-bold py-2 animate-pulse" id="editTip">按住右侧三横杠拖动排序 · 点击按钮完成</div>
@@ -109,13 +110,11 @@
         const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
         let db = [];
 
-        // 1. 数据初始化
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (raw) {
                 db = JSON.parse(raw);
             } else {
-                // 迁移旧数据逻辑...
                 const oldKeys = ['my_fund_v13_1', 'my_fund_v13'];
                 let recovered = null;
                 for (let key of oldKeys) {
@@ -132,13 +131,8 @@
         let cache = {};
         let isEditMode = false;
         let sortableInstance = null;
-        
-        // [新增] 拟合开关状态
         let isFittingEnabled = JSON.parse(localStorage.getItem('fitting_enabled') || 'true');
-        // 初始化开关UI
         document.getElementById('fittingToggle').checked = isFittingEnabled;
-
-        // --- 核心逻辑 ---
 
         function fetchFastData(code) {
             return new Promise((resolve) => {
@@ -157,18 +151,14 @@
                     if (data.jzrq) cache[code].officialDate = data.jzrq.substring(5);
                     else cache[code].officialDate = '--';
                     
-                    // 如果当前没有处于“高级模式”（ETF或自研），则直接使用官方数据
-                    // 注意：这里先存入官方数据，后续 fetchRealTime 会根据开关决定是否覆盖
+                    // 只有非高级模式才允许覆盖
                     if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
                         cache[code].rtVal = data.gsz;
                         cache[code].rtChange = data.gszzl;
                         cache[code].sourceType = 'official';
                     }
-                    
-                    // 始终备份官方数据
                     cache[code].backupVal = data.gsz;
                     cache[code].backupChange = data.gszzl;
-                    
                     renderRow(code);
                     resolve();
                 };
@@ -184,15 +174,9 @@
             queue: [],
             isRunning: false,
             add(code) {
-                // 如果是 Proxy 模式，跳过 K 线下载
                 if (cache[code].sourceType === 'proxy') { fetchRealTime(code); return; }
-                
-                // [新增] 如果开关关闭，且没有proxy，也跳过 K 线下载，直接用官方
                 if (!isFittingEnabled) { fetchRealTime(code); return; }
-
-                // 如果已有持仓，跳过
                 if (cache[code].holdings) { fetchRealTime(code); return; }
-                
                 this.queue.push(code);
                 this.run();
             },
@@ -203,7 +187,6 @@
                 }
                 this.isRunning = true;
                 const code = this.queue.shift();
-                
                 const total = db.length;
                 updateProgress(((total - this.queue.length) / total) * 100);
 
@@ -217,8 +200,6 @@
                     window.Data_fundSharesPositions = null;
                     window.fS_name = null;
                     try { document.body.removeChild(script); } catch(e){}
-                    
-                    // 无论成功失败，都尝试更新实时数据（会根据开关状态决策）
                     fetchRealTime(code);
                     this.isRunning = false;
                     this.run();
@@ -256,7 +237,6 @@
             const data = cache[code];
             if (!item) return;
 
-            // 分支 A: ETF 代理 (最高优先级，不受拟合开关影响)
             if (item.proxy) {
                 cache[code].sourceType = 'proxy';
                 renderRow(code); 
@@ -271,11 +251,10 @@
                     }
                 });
             }
-            // 分支 B: 自研持仓估值 ([新增] 必须开关开启)
             else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
                 const queryList = data.holdings.map(s => {
                     let prefix = '';
-                    if (s.code.length === 5) prefix = 'hk';
+                    if (s.code.length === 5) prefix = 'hk'; // 港股优先
                     else if (/^[569]/.test(s.code)) prefix = 'sh';
                     else if (/^[0123]/.test(s.code)) prefix = 'sz';
                     else if (/^[48]/.test(s.code)) prefix = 'bj';
@@ -300,11 +279,8 @@
                             validCount++;
                             const parts = val.split('~');
                             let current, prevClose, pct = 0;
-                            
-                            // 腾讯接口兼容性处理
                             current = parseFloat(parts[3]);
                             prevClose = parseFloat(parts[4]);
-                            
                             if (prevClose > 0 && current > 0) {
                                 pct = ((current - prevClose) / prevClose) * 100;
                             }
@@ -327,7 +303,6 @@
                 script.onerror = () => fallbackToOfficial(code);
                 document.body.appendChild(script);
             }
-            // 分支 C: 官方兜底 (开关关闭，或没有持仓数据)
             else {
                 fallbackToOfficial(code);
             }
@@ -368,28 +343,21 @@
             renderRow(code);
         }
 
-        // [新增] 切换拟合开关
         function toggleFitting() {
             isFittingEnabled = document.getElementById('fittingToggle').checked;
             localStorage.setItem('fitting_enabled', isFittingEnabled);
-            
-            // 重新计算所有基金
             db.forEach(item => {
-                // 如果之前是自研模式，现在关了，需要重置状态以便 fallback 触发
                 if (cache[item.code] && cache[item.code].sourceType === 'self') {
-                    cache[item.code].sourceType = ''; // 清空状态
+                    cache[item.code].sourceType = ''; 
                 }
-                // 重新加载重型队列（如果开启了开关且还没持仓）
                 if (isFittingEnabled && !item.proxy && (!cache[item.code] || !cache[item.code].holdings)) {
                     HeavyLoader.add(item.code);
                 } else {
-                    // 直接刷新实时数据
                     fetchRealTime(item.code);
                 }
             });
         }
 
-        // UI & 交互
         function openAddModal() {
             document.getElementById('addModal').classList.remove('hidden');
             document.getElementById('modalContent').classList.remove('modal-leave-active');
