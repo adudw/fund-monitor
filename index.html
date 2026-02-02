@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>核心资产看板 V12.0 (腾讯源)</title>
+    <title>基金涨跌监控 V13</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -17,16 +17,22 @@
         .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .loading-bar { height: 2px; width: 100%; background: #f1f5f9; position: absolute; bottom: 0; left: 0; }
         .loading-progress { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
+        
+        /* 弹窗动画 */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
+        .modal-leave { opacity: 1; transform: scale(1); }
+        .modal-leave-active { opacity: 0; transform: scale(0.95); transition: all 0.15s ease-in; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
-    <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-20 relative">
+    <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-32 relative">
         
         <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-all">
-            <div class="flex justify-between items-center mb-3">
+            <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
-                    <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-green-600 px-1.5 py-0.5 rounded font-mono">V12.0 Tencent</span>
+                    <h1 class="text-lg font-bold text-slate-800">基金涨跌监控</h1>
+                    <span id="globalStatus" class="text-[10px] text-white bg-blue-600 px-1.5 py-0.5 rounded font-mono">V13.0</span>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
@@ -41,12 +47,7 @@
                 </div>
             </div>
             
-            <div class="flex gap-2 transition-all duration-300 overflow-hidden" id="addBar">
-                <input type="text" id="fundInput" inputmode="numeric" placeholder="输入代码 (如 005827)" 
-                       class="flex-1 bg-slate-100 border-none px-3 py-2 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all">
-                <button onclick="addNewFund()" class="bg-blue-600 text-white px-4 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition">添加</button>
-            </div>
-            <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">拖拽排序 · 点击完成</div>
+            <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">拖拽排序 · 点击按钮完成</div>
             <div class="loading-bar"><div id="progressBar" class="loading-progress"></div></div>
         </header>
 
@@ -70,10 +71,34 @@
                 数据源：腾讯财经(实时) + 东方财富(K线)
             </p>
         </main>
+
+        <button onclick="openAddModal()" class="fixed bottom-8 right-8 w-14 h-14 bg-blue-600 rounded-full shadow-lg shadow-blue-500/30 flex items-center justify-center text-white z-40 hover:bg-blue-700 active:scale-90 transition-transform duration-200">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+        </button>
+
+        <div id="addModal" class="fixed inset-0 z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div class="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onclick="closeAddModal()"></div>
+            
+            <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all sm:my-8 w-full max-w-sm p-6 modal-enter" id="modalContent">
+                    <h3 class="text-lg font-bold leading-6 text-gray-900 mb-4">添加新基金</h3>
+                    <div class="mt-2">
+                        <input type="number" id="modalInput" inputmode="numeric" placeholder="请输入6位代码 (如 005827)" 
+                               class="w-full border border-gray-300 px-4 py-3 rounded-xl text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                        <p class="text-xs text-gray-400 mt-2 text-left">支持股票型、混合型及指数ETF联接基金</p>
+                    </div>
+                    <div class="mt-6 flex gap-3">
+                        <button type="button" onclick="closeAddModal()" class="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none">取消</button>
+                        <button type="button" onclick="confirmAdd()" class="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus:outline-none">确认添加</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v12';
+        const STORAGE_KEY = 'my_fund_v13';
         const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
         
         let db = [];
@@ -95,7 +120,6 @@
                         return;
                     }
                     if (!cache[code]) cache[code] = {};
-                    
                     cache[code].name = data.name;
                     cache[code].officialNav = data.dwjz;
                     cache[code].officialDate = data.gztime.split(' ')[0].substring(5);
@@ -188,11 +212,9 @@
             const data = cache[code];
             if (!item) return;
 
-            // 1. ETF 代理模式
             if (item.proxy) {
                 cache[code].sourceType = 'proxy';
                 renderRow(code); 
-                
                 fetchTencentData(item.proxy, (current, percent) => {
                     if (current > 0) {
                         cache[code].rtVal = current.toFixed(3);
@@ -200,24 +222,22 @@
                         cache[code].sourceType = 'proxy';
                         renderRow(code);
                     } else {
-                        console.warn('Proxy fetch failed');
                         fallbackToOfficial(code);
                     }
                 });
             }
-            // 2. 自研重仓模式
             else if (data.holdings && data.holdings.length > 0) {
                 const queryList = data.holdings.map(s => {
                     let prefix = '';
                     if (/^[569]/.test(s.code)) prefix = 'sh';
                     else if (/^[0123]/.test(s.code)) prefix = 'sz';
                     else if (/^[48]/.test(s.code)) prefix = 'bj';
-                    else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'hk'; // 腾讯港股前缀是 hk
+                    else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'hk';
                     return prefix + s.code;
                 }).join(',');
 
                 const script = document.createElement('script');
-                script.src = `https://qt.gtimg.cn/q=${queryList}`; // 腾讯接口
+                script.src = `https://qt.gtimg.cn/q=${queryList}`; 
                 script.charset = 'gbk';
                 script.onload = () => {
                     let totalContribution = 0;
@@ -229,11 +249,9 @@
                         else if (/^[48]/.test(stock.code)) prefix = 'bj';
                         else if (/^0/.test(stock.code)) prefix = 'hk';
                         
-                        // 腾讯变量名: v_sh600519
                         const val = window[`v_${prefix}${stock.code}`];
                         if (val) {
                             validCount++;
-                            // 腾讯数据格式: 1~名字~代码~当前价~昨收~...
                             const parts = val.split('~');
                             const current = parseFloat(parts[3]);
                             const prevClose = parseFloat(parts[4]);
@@ -266,7 +284,6 @@
             }
         }
 
-        // 腾讯接口通用调用
         function fetchTencentData(symbol, callback) {
             const script = document.createElement('script');
             script.src = `https://qt.gtimg.cn/q=${symbol}`;
@@ -302,7 +319,47 @@
             renderRow(code);
         }
 
-        // --- 主流程 & 交互 ---
+        // --- UI 操作逻辑 (弹窗相关) ---
+        function openAddModal() {
+            document.getElementById('addModal').classList.remove('hidden');
+            document.getElementById('modalContent').classList.remove('modal-leave-active');
+            document.getElementById('modalContent').classList.add('modal-enter-active');
+            document.getElementById('modalInput').focus();
+        }
+
+        function closeAddModal() {
+            document.getElementById('modalContent').classList.remove('modal-enter-active');
+            document.getElementById('modalContent').classList.add('modal-leave-active');
+            setTimeout(() => {
+                document.getElementById('addModal').classList.add('hidden');
+            }, 150);
+        }
+
+        function confirmAdd() {
+            const input = document.getElementById('modalInput');
+            const code = input.value.trim();
+            if (/^\d{6}$/.test(code)) {
+                if (!db.find(i => i.code === code)) {
+                    db.unshift({ code: code, proxy: '' });
+                    saveDb();
+                    renderAll();
+                    fetchFastData(code).then(() => HeavyLoader.add(code));
+                    closeAddModal();
+                    input.value = '';
+                } else {
+                    alert('该基金已存在列表');
+                }
+            } else {
+                alert('请输入6位数字代码');
+            }
+        }
+        
+        // 绑定弹窗回车键
+        document.getElementById('modalInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') confirmAdd();
+        });
+
+        // --- 主流程 ---
         async function fullReload() {
             updateProgress(10);
             HeavyLoader.queue = [];
@@ -319,18 +376,6 @@
             updateProgress(30);
 
             db.forEach(item => HeavyLoader.add(item.code));
-        }
-
-        function addNewFund() {
-            const input = document.getElementById('fundInput');
-            const code = input.value.trim();
-            if (/^\d{6}$/.test(code) && !db.find(i => i.code === code)) {
-                db.unshift({ code: code, proxy: '' });
-                saveDb();
-                renderAll();
-                input.value = '';
-                fetchFastData(code).then(() => HeavyLoader.add(code));
-            }
         }
 
         function removeFund(code) {
@@ -374,7 +419,7 @@
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
         function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
 
-        // --- UI ---
+        // --- 渲染逻辑 (更新文案) ---
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
@@ -418,8 +463,9 @@
                 valLabel = '<span class="text-orange-500 font-bold">⚡自研</span>';
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">重仓透视</div>`;
             } else if (sourceType === 'official') {
-                valLabel = '<span class="text-slate-400">官方</span>';
-                subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">兜底接口</div>`;
+                // [文案修改] 兜底接口 -> 天天
+                valLabel = '<span class="text-slate-400">天天</span>';
+                subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">天天基金</div>`;
             } else {
                 valLabel = '<span class="text-slate-200">...</span>';
             }
@@ -457,11 +503,9 @@
         function toggleEditMode() {
             isEditMode = !isEditMode;
             const btn = document.getElementById('editBtn');
-            const addBar = document.getElementById('addBar');
             const editTip = document.getElementById('editTip');
             if (isEditMode) {
                 btn.classList.add('bg-blue-100', 'text-blue-600');
-                addBar.classList.add('hidden');
                 editTip.classList.remove('hidden');
                 sortableInstance = new Sortable(document.getElementById('fundTableBody'), {
                     handle: '.drag-handle', animation: 150,
@@ -473,15 +517,11 @@
                 });
             } else {
                 btn.classList.remove('bg-blue-100', 'text-blue-600');
-                addBar.classList.remove('hidden');
                 editTip.classList.add('hidden');
                 if (sortableInstance) sortableInstance.destroy();
             }
             renderAll();
         }
-
-        function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
-        function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
 
         fullReload();
         setInterval(() => {
