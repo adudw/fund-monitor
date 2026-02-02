@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>核心资产看板 V11.0 (极速版)</title>
+    <title>核心资产看板 V11.1 (锁机制版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -15,9 +15,7 @@
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
         .sortable-ghost { opacity: 0.4; background: #f1f5f9; }
         .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        
-        /* 加载条动画 */
-        .loading-bar { height: 2px; width: 100%; background: #f1f5f9; overflow: hidden; position: absolute; bottom: 0; left: 0; }
+        .loading-bar { height: 2px; width: 100%; background: #f1f5f9; position: absolute; bottom: 0; left: 0; }
         .loading-progress { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
     </style>
 </head>
@@ -28,7 +26,7 @@
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-blue-500 px-1.5 py-0.5 rounded font-mono">V11.0 Turbo</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono">V11.1 Lock</span>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
@@ -37,7 +35,7 @@
                     <button onclick="fullReload()" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:bg-slate-200 transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
-                    <button onclick="hardReset()" class="p-2 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition" title="重置数据">
+                    <button onclick="hardReset()" class="p-2 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
@@ -49,7 +47,6 @@
                 <button onclick="addNewFund()" class="bg-blue-600 text-white px-4 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition">添加</button>
             </div>
             <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">拖拽排序 · 点击完成</div>
-            
             <div class="loading-bar"><div id="progressBar" class="loading-progress"></div></div>
         </header>
 
@@ -70,86 +67,80 @@
                 <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">暂无数据，请添加基金代码</div>
             </div>
             <p class="text-center text-[10px] text-slate-300 mt-6 px-4">
-                优先加载官方数据保证响应速度 · 后台静默加载自研持仓
+                权限控制：ETF锚点 > 自研重仓 > 官方兜底
             </p>
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v11';
+        const STORAGE_KEY = 'my_fund_v11_1';
         const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
         
         let db = [];
-        try {
-            db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
-        } catch(e) {
-            db = DEFAULT_DB;
-        }
+        try { db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB; } catch(e) { db = DEFAULT_DB; }
         
         let cache = {};
         let isEditMode = false;
         let sortableInstance = null;
 
-        // --- 核心：极速加载器 (Parallel Fast Loader) ---
-        // 这一步只拿最基础的 fundgz 数据，保证 0.5s 内页面有东西看
+        // --- 核心：极速加载器 (官方数据) ---
         function fetchFastData(code) {
             return new Promise((resolve) => {
                 const script = document.createElement('script');
-                const cbName = `jsonpgz_${code}_${Date.now()}`; // 动态回调名防止冲突
-                
-                // 天天基金的接口是定死的 jsonpgz，我们需要拦截全局变量
                 const originalCallback = window.jsonpgz;
+                
                 window.jsonpgz = function(data) {
                     if (data.fundcode !== code) {
                         if (originalCallback) originalCallback(data);
                         return;
                     }
-                    // 存入基础数据
                     if (!cache[code]) cache[code] = {};
-                    cache[code].name = data.name;
-                    cache[code].officialVal = data.gsz;      // 官方估值
-                    cache[code].officialRate = data.gszzl;   // 官方涨幅
-                    cache[code].officialNav = data.dwjz;     // 官方昨日净值
-                    cache[code].officialDate = data.gztime.split(' ')[0].substring(5); // 日期
                     
-                    // 默认先展示官方数据，避免空白
-                    if (!cache[code].sourceType) cache[code].sourceType = 'official';
+                    // 1. 无条件更新：名称和净值 (这是官方的权威数据)
+                    cache[code].name = data.name;
+                    cache[code].officialNav = data.dwjz;
+                    cache[code].officialDate = data.gztime.split(' ')[0].substring(5);
+                    
+                    // 2. 有条件更新：估值
+                    // [关键修复] 只有当当前不是 'proxy' (ETF模式) 时，才允许官方估值覆盖 rtVal
+                    // 这防止了官方数据“抢跑”覆盖了 ETF 数据
+                    if (cache[code].sourceType !== 'proxy') {
+                        cache[code].rtVal = data.gsz;
+                        cache[code].rtChange = data.gszzl;
+                        cache[code].sourceType = 'official';
+                    } else {
+                        // 如果是 ETF 模式，官方估值只存不显，作为备胎
+                        cache[code].backupVal = data.gsz;
+                        cache[code].backupChange = data.gszzl;
+                    }
                     
                     renderRow(code);
                     resolve();
                 };
 
                 script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-                script.onerror = () => resolve(); // 即使失败也 resolve，不阻塞
+                script.onerror = () => resolve(); 
                 document.body.appendChild(script);
-                // 1秒超时强制结束
                 setTimeout(() => resolve(), 1000); 
             });
         }
 
-        // --- 核心：重型数据加载器 (Serial Queue with Timeout) ---
-        // 专门负责下载 K线 和 持仓，用于自研估值
+        // --- 核心：重型数据加载器 (持仓) ---
         const HeavyLoader = {
             queue: [],
             isRunning: false,
-            
             add(code) {
-                // 如果已经有 ETF 锚点，或者已经有持仓数据，就不用重新下载大文件了
-                const item = db.find(i => i.code === code);
-                if (item && item.proxy) {
-                    // 如果是 ETF 模式，直接跳过重型加载，去抓实时数据
-                    fetchRealTime(code); 
-                    return; 
+                // 如果是 ETF 模式，直接跳过，去抓实时数据
+                if (cache[code].sourceType === 'proxy') {
+                    fetchRealTime(code); return;
                 }
-                if (cache[code] && cache[code].holdings) {
-                    fetchRealTime(code);
-                    return;
+                // 如果已经有持仓，也跳过
+                if (cache[code].holdings) {
+                    fetchRealTime(code); return;
                 }
-                
                 this.queue.push(code);
                 this.run();
             },
-
             run() {
                 if (this.isRunning || this.queue.length === 0) {
                     if (this.queue.length === 0) updateProgress(100);
@@ -158,92 +149,80 @@
                 this.isRunning = true;
                 const code = this.queue.shift();
                 
-                // 更新进度条
                 const total = db.length;
-                const remaining = this.queue.length;
-                updateProgress(((total - remaining) / total) * 100);
+                updateProgress(((total - this.queue.length) / total) * 100);
 
                 const script = document.createElement('script');
                 let isFinished = false;
 
-                // 定义完成逻辑
                 const finish = () => {
                     if (isFinished) return;
                     isFinished = true;
-                    // 清理
                     window.Data_netWorthTrend = null;
                     window.Data_fundSharesPositions = null;
                     window.fS_name = null;
                     try { document.body.removeChild(script); } catch(e){}
                     
-                    // 无论成功失败，都去尝试获取实时数据
-                    // 如果持仓加载失败，fetchRealTime 会自动降级回官方数据
-                    fetchRealTime(code);
-                    
+                    // 只有当不是 ETF 模式时，才进行自研估值
+                    if (cache[code].sourceType !== 'proxy') {
+                        fetchRealTime(code);
+                    }
                     this.isRunning = false;
-                    this.run(); // 下一个
+                    this.run();
                 };
 
                 script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
-                
                 script.onload = () => {
                     if (!cache[code]) cache[code] = {};
-                    
-                    // 解析净值
+                    // K线净值覆盖官方净值 (更准)
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
                         const dateObj = new Date(last.x);
                         cache[code].nav = last.y;
                         cache[code].navDate = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
                     }
-
-                    // 解析持仓
                     if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
                         const latestReport = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
                         const stocks = [];
                         for (let i = 1; i < latestReport.length && stocks.length < 10; i += 3) {
                             if (latestReport[i]) {
-                                stocks.push({
-                                    code: latestReport[i],
-                                    percent: parseFloat(latestReport[i+2] || 0)
-                                });
+                                stocks.push({ code: latestReport[i], percent: parseFloat(latestReport[i+2] || 0) });
                             }
                         }
                         cache[code].holdings = stocks;
                     }
                     finish();
                 };
-
-                script.onerror = () => {
-                    console.warn(`[${code}] Heavy data load failed`);
-                    finish();
-                };
-
+                script.onerror = () => finish(); 
                 document.body.appendChild(script);
-
-                // [关键修复] 3秒超时熔断。如果 pingzhongdata 卡死，强制跳过，防止死锁
-                setTimeout(() => {
-                    if (!isFinished) {
-                        console.warn(`[${code}] Heavy data timeout, skipping...`);
-                        finish();
-                    }
-                }, 3000);
+                setTimeout(() => finish(), 3000); // 3s 超时
             }
         };
 
-        // --- 核心：实时数据获取 (新浪接口) ---
+        // --- 核心：实时数据获取 ---
         function fetchRealTime(code) {
             const item = db.find(i => i.code === code);
             const data = cache[code];
             if (!item) return;
 
-            // 1. ETF 代理模式
+            // 1. ETF 代理模式 (最高优先级)
             if (item.proxy) {
-                fetchSinaData(code, item.proxy, (current, percent) => {
-                    cache[code].rtVal = current.toFixed(3);
-                    cache[code].rtChange = percent.toFixed(2);
-                    cache[code].sourceType = 'proxy';
-                    renderRow(code);
+                // 确保标记已打上
+                cache[code].sourceType = 'proxy';
+                renderRow(code); // 立即让界面显示 "⚓" (即使数据还没回来)
+                
+                fetchSinaData(item.proxy, (current, percent) => {
+                    if (current > 0) {
+                        cache[code].rtVal = current.toFixed(3);
+                        cache[code].rtChange = percent.toFixed(2);
+                        // 再次确认防止竞态
+                        cache[code].sourceType = 'proxy';
+                        renderRow(code);
+                    } else {
+                        // 如果 ETF 抓取失败 (比如代码错了)，回退到官方数据
+                        console.warn('Proxy fetch failed, fallback');
+                        fallbackToOfficial(code);
+                    }
                 });
             }
             // 2. 自研重仓模式
@@ -260,9 +239,9 @@
                 const script = document.createElement('script');
                 script.src = `https://hq.sinajs.cn/list=${queryList}`;
                 script.charset = 'gbk';
-                
                 script.onload = () => {
                     let totalContribution = 0;
+                    let validCount = 0;
                     data.holdings.forEach(stock => {
                         let prefix = '';
                         if (/^[569]/.test(stock.code)) prefix = 'sh';
@@ -272,43 +251,39 @@
                         
                         const val = window[`hq_str_${prefix}${stock.code}`];
                         if (val) {
+                            validCount++;
                             const parts = val.split(',');
                             let current, prevClose, pct = 0;
-                            if (prefix === 'rt_hk') {
-                                current = parseFloat(parts[6]); prevClose = parseFloat(parts[3]);
-                            } else {
-                                current = parseFloat(parts[3]); prevClose = parseFloat(parts[2]);
-                            }
-                            if (prevClose > 0 && current > 0) {
-                                pct = ((current - prevClose) / prevClose) * 100;
-                            }
+                            if (prefix === 'rt_hk') { current = parseFloat(parts[6]); prevClose = parseFloat(parts[3]); }
+                            else { current = parseFloat(parts[3]); prevClose = parseFloat(parts[2]); }
+                            
+                            if (prevClose > 0 && current > 0) pct = ((current - prevClose) / prevClose) * 100;
                             totalContribution += (stock.percent * pct) / 100;
                         }
                     });
                     
-                    // 计算估值
-                    const nav = parseFloat(data.nav || data.officialNav || 0);
-                    let est = '--';
-                    if (nav > 0) est = (nav * (1 + totalContribution/100)).toFixed(4);
-
-                    cache[code].rtVal = est;
-                    cache[code].rtChange = totalContribution.toFixed(2);
-                    cache[code].sourceType = 'self';
-                    renderRow(code);
+                    if (validCount > 0) {
+                        const nav = parseFloat(data.nav || data.officialNav || 0);
+                        let est = '--';
+                        if (nav > 0) est = (nav * (1 + totalContribution/100)).toFixed(4);
+                        cache[code].rtVal = est;
+                        cache[code].rtChange = totalContribution.toFixed(2);
+                        cache[code].sourceType = 'self';
+                        renderRow(code);
+                    } else {
+                        fallbackToOfficial(code);
+                    }
                 };
-                script.onerror = () => { 
-                    // 失败则回退官方
-                    fallbackToOfficial(code); 
-                };
+                script.onerror = () => fallbackToOfficial(code);
                 document.body.appendChild(script);
             }
-            // 3. 兜底模式
+            // 3. 兜底
             else {
                 fallbackToOfficial(code);
             }
         }
 
-        function fetchSinaData(code, symbol, callback) {
+        function fetchSinaData(symbol, callback) {
             const script = document.createElement('script');
             script.src = `https://hq.sinajs.cn/list=${symbol}`;
             script.charset = 'gbk';
@@ -321,15 +296,22 @@
                     let pct = 0;
                     if (prev > 0) pct = ((current - prev) / prev) * 100;
                     callback(current, pct);
+                } else {
+                    callback(0, 0); // Fail
                 }
             };
+            script.onerror = () => callback(0, 0);
             document.body.appendChild(script);
         }
 
         function fallbackToOfficial(code) {
+            // 将权限降级，允许显示官方数据
             cache[code].sourceType = 'official';
-            // 使用之前 fetchFastData 拿到的数据
-            if (cache[code].officialVal) {
+            // 如果之前备胎数据存在，直接用
+            if (cache[code].backupVal) {
+                cache[code].rtVal = cache[code].backupVal;
+                cache[code].rtChange = cache[code].backupChange;
+            } else if (cache[code].officialVal) {
                 cache[code].rtVal = cache[code].officialVal;
                 cache[code].rtChange = cache[code].officialRate;
             }
@@ -340,14 +322,21 @@
         async function fullReload() {
             updateProgress(10);
             HeavyLoader.queue = [];
-            HeavyLoader.isRunning = false; // 强制重置锁
+            HeavyLoader.isRunning = false;
             
-            // 1. 并发获取基础数据 (防止白屏)
+            // 1. 初始化状态：如果有 proxy，先占位
+            db.forEach(item => {
+                if (!cache[item.code]) cache[item.code] = {};
+                if (item.proxy) cache[item.code].sourceType = 'proxy';
+            });
+            renderAll(); // 立即渲染一遍，让 ETF 标签显示出来
+
+            // 2. 并发获取官方数据 (只更新净值，估值根据权限更新)
             const promises = db.map(item => fetchFastData(item.code));
             await Promise.all(promises);
             updateProgress(30);
 
-            // 2. 启动重型队列 (用于获取持仓)
+            // 3. 启动重型队列 (ETF 模式会自动跳过)
             db.forEach(item => HeavyLoader.add(item.code));
         }
 
@@ -359,7 +348,6 @@
                 saveDb();
                 renderAll();
                 input.value = '';
-                // 单独触发该基金的加载
                 fetchFastData(code).then(() => HeavyLoader.add(code));
             }
         }
@@ -384,7 +372,13 @@
                 }
                 item.proxy = val;
                 saveDb();
-                cache[code].sourceType = item.proxy ? 'proxy' : 'self';
+                
+                // 状态重置
+                if(cache[code]) { 
+                    cache[code].sourceType = item.proxy ? 'proxy' : ''; // 立即切换权限
+                    cache[code].rtVal = '...'; 
+                    cache[code].rtChange = 0;
+                }
                 renderRow(code);
                 fetchRealTime(code); // 立即刷新
             }
@@ -397,7 +391,7 @@
             }
         }
 
-        // --- UI 渲染 ---
+        // --- UI ---
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
@@ -422,12 +416,10 @@
             const data = cache[code] || {};
 
             const name = data.name || code;
-            // 优先使用 K线里的精准净值，没有则用官方接口的昨日净值
             const nav = data.nav || data.officialNav || '--';
             const navDate = data.navDate || data.officialDate || '--';
-            
-            const rtVal = data.rtVal || data.officialVal || '--';
-            const rtChange = data.rtChange || data.officialRate || 0;
+            const rtVal = data.rtVal || '--';
+            const rtChange = data.rtChange || 0;
             const sourceType = data.sourceType || 'loading';
 
             const isUp = parseFloat(rtChange) >= 0;
@@ -436,6 +428,7 @@
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
             let valLabel = '', subTag = '';
+            // 只要 sourceType 是 proxy，就无条件显示 ETF 标签，不管数据回来没
             if (sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">⚓ETF</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ${item.proxy}</div>`;
@@ -479,7 +472,6 @@
             `;
         }
 
-        // 排序与杂项
         function toggleEditMode() {
             isEditMode = !isEditMode;
             const btn = document.getElementById('editBtn');
@@ -509,10 +501,8 @@
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
         function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
 
-        // 启动
-        renderAll();
+        // Start
         fullReload();
-        // 自动刷新: 快速刷新实时估值(15s), 慢速刷新结构(不刷)
         setInterval(() => {
             db.forEach(item => fetchRealTime(item.code));
         }, 15000);
