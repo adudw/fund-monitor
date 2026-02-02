@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>核心资产看板 V10.1</title>
+    <title>核心资产看板 V11.0 (极速版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -15,23 +15,30 @@
         .tap-transparent { -webkit-tap-highlight-color: transparent; }
         .sortable-ghost { opacity: 0.4; background: #f1f5f9; }
         .sortable-drag { background: #ffffff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        
+        /* 加载条动画 */
+        .loading-bar { height: 2px; width: 100%; background: #f1f5f9; overflow: hidden; position: absolute; bottom: 0; left: 0; }
+        .loading-progress { height: 100%; background: #3b82f6; width: 0%; transition: width 0.3s; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased">
     <div class="max-w-md mx-auto md:max-w-5xl min-h-screen pb-20 relative">
         
-        <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-colors duration-300">
+        <header class="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-30 px-4 py-3 shadow-sm transition-all">
             <div class="flex justify-between items-center mb-3">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800">核心资产</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-red-500 px-1.5 py-0.5 rounded font-mono">V10.1 Hotfix</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-blue-500 px-1.5 py-0.5 rounded font-mono">V11.0 Turbo</span>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="toggleEditMode()" id="editBtn" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>
                     </button>
-                    <button onclick="refreshAll()" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:bg-slate-200 transition">
+                    <button onclick="fullReload()" class="p-2 bg-slate-100 rounded-lg text-slate-500 active:bg-slate-200 transition">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <button onclick="hardReset()" class="p-2 bg-red-50 text-red-400 rounded-lg active:bg-red-100 transition" title="重置数据">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
             </div>
@@ -41,13 +48,13 @@
                        class="flex-1 bg-slate-100 border-none px-3 py-2 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-all">
                 <button onclick="addNewFund()" class="bg-blue-600 text-white px-4 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition">添加</button>
             </div>
-            <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">
-                按住右侧三横杠拖动排序，点击按钮完成
-            </div>
+            <div class="hidden text-center text-xs text-blue-500 font-bold py-2" id="editTip">拖拽排序 · 点击完成</div>
+            
+            <div class="loading-bar"><div id="progressBar" class="loading-progress"></div></div>
         </header>
 
         <main class="p-2 md:p-6">
-            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden min-h-[200px]">
                 <table class="w-full">
                     <thead class="bg-slate-50 border-b border-slate-100 text-xs text-slate-400 font-medium">
                         <tr>
@@ -63,270 +70,285 @@
                 <div id="emptyState" class="hidden py-16 text-center text-slate-400 text-sm">暂无数据，请添加基金代码</div>
             </div>
             <p class="text-center text-[10px] text-slate-300 mt-6 px-4">
-                官方净值(K线) | 智能混合估值源
+                优先加载官方数据保证响应速度 · 后台静默加载自研持仓
             </p>
         </main>
     </div>
 
     <script>
-        const STORAGE_KEY = 'my_fund_v10_1';
-        const DEFAULT_DB = [
-            { code: '005827', proxy: '' },       
-            { code: '000217', proxy: 'sh518880' } 
-        ];
-
-        let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
+        const STORAGE_KEY = 'my_fund_v11';
+        const DEFAULT_DB = [{ code: '005827', proxy: '' }, { code: '000217', proxy: 'sh518880' }];
+        
+        let db = [];
+        try {
+            db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_DB;
+        } catch(e) {
+            db = DEFAULT_DB;
+        }
+        
         let cache = {};
         let isEditMode = false;
         let sortableInstance = null;
 
-        // 1. 基础信息 (名字)
-        function fetchBasicInfo(code) {
-            const script = document.createElement('script');
-            script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-            window.jsonpgz = function(data) {
-                if(data.fundcode !== code) return; 
-                if(!cache[code]) cache[code] = {};
-                cache[code].name = data.name; 
-                renderRow(code);
-            };
-            document.body.appendChild(script);
+        // --- 核心：极速加载器 (Parallel Fast Loader) ---
+        // 这一步只拿最基础的 fundgz 数据，保证 0.5s 内页面有东西看
+        function fetchFastData(code) {
+            return new Promise((resolve) => {
+                const script = document.createElement('script');
+                const cbName = `jsonpgz_${code}_${Date.now()}`; // 动态回调名防止冲突
+                
+                // 天天基金的接口是定死的 jsonpgz，我们需要拦截全局变量
+                const originalCallback = window.jsonpgz;
+                window.jsonpgz = function(data) {
+                    if (data.fundcode !== code) {
+                        if (originalCallback) originalCallback(data);
+                        return;
+                    }
+                    // 存入基础数据
+                    if (!cache[code]) cache[code] = {};
+                    cache[code].name = data.name;
+                    cache[code].officialVal = data.gsz;      // 官方估值
+                    cache[code].officialRate = data.gszzl;   // 官方涨幅
+                    cache[code].officialNav = data.dwjz;     // 官方昨日净值
+                    cache[code].officialDate = data.gztime.split(' ')[0].substring(5); // 日期
+                    
+                    // 默认先展示官方数据，避免空白
+                    if (!cache[code].sourceType) cache[code].sourceType = 'official';
+                    
+                    renderRow(code);
+                    resolve();
+                };
+
+                script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
+                script.onerror = () => resolve(); // 即使失败也 resolve，不阻塞
+                document.body.appendChild(script);
+                // 1秒超时强制结束
+                setTimeout(() => resolve(), 1000); 
+            });
         }
 
-        // 2. 核心加载器
-        const NavLoader = {
+        // --- 核心：重型数据加载器 (Serial Queue with Timeout) ---
+        // 专门负责下载 K线 和 持仓，用于自研估值
+        const HeavyLoader = {
             queue: [],
             isRunning: false,
+            
             add(code) {
+                // 如果已经有 ETF 锚点，或者已经有持仓数据，就不用重新下载大文件了
+                const item = db.find(i => i.code === code);
+                if (item && item.proxy) {
+                    // 如果是 ETF 模式，直接跳过重型加载，去抓实时数据
+                    fetchRealTime(code); 
+                    return; 
+                }
+                if (cache[code] && cache[code].holdings) {
+                    fetchRealTime(code);
+                    return;
+                }
+                
                 this.queue.push(code);
                 this.run();
             },
+
             run() {
-                if (this.isRunning || this.queue.length === 0) return;
+                if (this.isRunning || this.queue.length === 0) {
+                    if (this.queue.length === 0) updateProgress(100);
+                    return;
+                }
                 this.isRunning = true;
                 const code = this.queue.shift();
                 
-                updateStatus(`同步 ${code}...`);
+                // 更新进度条
+                const total = db.length;
+                const remaining = this.queue.length;
+                updateProgress(((total - remaining) / total) * 100);
+
                 const script = document.createElement('script');
+                let isFinished = false;
+
+                // 定义完成逻辑
+                const finish = () => {
+                    if (isFinished) return;
+                    isFinished = true;
+                    // 清理
+                    window.Data_netWorthTrend = null;
+                    window.Data_fundSharesPositions = null;
+                    window.fS_name = null;
+                    try { document.body.removeChild(script); } catch(e){}
+                    
+                    // 无论成功失败，都去尝试获取实时数据
+                    // 如果持仓加载失败，fetchRealTime 会自动降级回官方数据
+                    fetchRealTime(code);
+                    
+                    this.isRunning = false;
+                    this.run(); // 下一个
+                };
+
                 script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
                 
                 script.onload = () => {
                     if (!cache[code]) cache[code] = {};
-
+                    
+                    // 解析净值
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
                         const dateObj = new Date(last.x);
-                        cache[code].nav = last.y;      
+                        cache[code].nav = last.y;
                         cache[code].navDate = `${(dateObj.getMonth()+1).toString().padStart(2,'0')}-${dateObj.getDate().toString().padStart(2,'0')}`;
                     }
 
+                    // 解析持仓
                     if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
                         const latestReport = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
                         const stocks = [];
                         for (let i = 1; i < latestReport.length && stocks.length < 10; i += 3) {
-                            if (latestReport[i] && latestReport[i+2]) {
+                            if (latestReport[i]) {
                                 stocks.push({
                                     code: latestReport[i],
-                                    percent: parseFloat(latestReport[i+2])
+                                    percent: parseFloat(latestReport[i+2] || 0)
                                 });
                             }
                         }
                         cache[code].holdings = stocks;
                     }
-                    
-                    if (!cache[code].name && window.fS_name) cache[code].name = window.fS_name;
+                    finish();
+                };
 
-                    window.Data_netWorthTrend = null;
-                    window.Data_fundSharesPositions = null;
-                    window.fS_name = null;
-                    document.body.removeChild(script);
-                    
-                    decideAndFetchRealTime(code);
-                    this.isRunning = false;
-                    this.run();
+                script.onerror = () => {
+                    console.warn(`[${code}] Heavy data load failed`);
+                    finish();
                 };
-                script.onerror = () => { 
-                    // 即使加载失败，也要尝试去获取实时估值(走兜底)
-                    decideAndFetchRealTime(code);
-                    this.isRunning = false; 
-                    this.run(); 
-                };
+
                 document.body.appendChild(script);
+
+                // [关键修复] 3秒超时熔断。如果 pingzhongdata 卡死，强制跳过，防止死锁
+                setTimeout(() => {
+                    if (!isFinished) {
+                        console.warn(`[${code}] Heavy data timeout, skipping...`);
+                        finish();
+                    }
+                }, 3000);
             }
         };
 
-        // 3. 智能决策引擎
-        function decideAndFetchRealTime(code) {
+        // --- 核心：实时数据获取 (新浪接口) ---
+        function fetchRealTime(code) {
             const item = db.find(i => i.code === code);
-            const data = cache[code] || {}; // 确保data存在
+            const data = cache[code];
+            if (!item) return;
 
-            // 策略 A: ETF 代理
+            // 1. ETF 代理模式
             if (item.proxy) {
-                cache[code].sourceType = 'proxy'; 
-                renderRow(code); 
-                fetchProxyData(code, item.proxy);
-            } 
-            // 策略 B: 自研估值 (前提: 必须获取到了持仓数据)
-            else if (data.holdings && data.holdings.length > 0) {
-                cache[code].sourceType = 'self';
-                renderRow(code);
-                fetchSelfValuation(code, data.holdings);
-            }
-            // 策略 C: 官方估值兜底 (Fallback)
-            // 如果 Pingzhongdata 挂了，或者没持仓，就用这个
-            else {
-                cache[code].sourceType = 'official';
-                renderRow(code);
-                fetchOfficialFallback(code);
-            }
-        }
-
-        function fetchProxyData(code, proxyCode) {
-            const script = document.createElement('script');
-            script.src = `https://hq.sinajs.cn/list=${proxyCode}`;
-            script.charset = 'gbk';
-            script.onload = () => {
-                const dataStr = window[`hq_str_${proxyCode}`];
-                if (dataStr) {
-                    const parts = dataStr.split(',');
-                    // 兼容: 有些时候 parts[3] 为 0，比如集合竞价阶段或停牌
-                    const current = parseFloat(parts[3] == 0 ? parts[2] : parts[3]);
-                    const yesterday = parseFloat(parts[2]);
-                    let percent = 0;
-                    if (yesterday > 0) percent = ((current - yesterday) / yesterday) * 100;
-
+                fetchSinaData(code, item.proxy, (current, percent) => {
                     cache[code].rtVal = current.toFixed(3);
                     cache[code].rtChange = percent.toFixed(2);
+                    cache[code].sourceType = 'proxy';
                     renderRow(code);
-                }
-            };
-            document.body.appendChild(script);
+                });
+            }
+            // 2. 自研重仓模式
+            else if (data.holdings && data.holdings.length > 0) {
+                const queryList = data.holdings.map(s => {
+                    let prefix = '';
+                    if (/^[569]/.test(s.code)) prefix = 'sh';
+                    else if (/^[0123]/.test(s.code)) prefix = 'sz';
+                    else if (/^[48]/.test(s.code)) prefix = 'bj';
+                    else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'rt_hk';
+                    return prefix + s.code;
+                }).join(',');
+
+                const script = document.createElement('script');
+                script.src = `https://hq.sinajs.cn/list=${queryList}`;
+                script.charset = 'gbk';
+                
+                script.onload = () => {
+                    let totalContribution = 0;
+                    data.holdings.forEach(stock => {
+                        let prefix = '';
+                        if (/^[569]/.test(stock.code)) prefix = 'sh';
+                        else if (/^[0123]/.test(stock.code)) prefix = 'sz';
+                        else if (/^[48]/.test(stock.code)) prefix = 'bj';
+                        else if (/^0/.test(stock.code)) prefix = 'rt_hk';
+                        
+                        const val = window[`hq_str_${prefix}${stock.code}`];
+                        if (val) {
+                            const parts = val.split(',');
+                            let current, prevClose, pct = 0;
+                            if (prefix === 'rt_hk') {
+                                current = parseFloat(parts[6]); prevClose = parseFloat(parts[3]);
+                            } else {
+                                current = parseFloat(parts[3]); prevClose = parseFloat(parts[2]);
+                            }
+                            if (prevClose > 0 && current > 0) {
+                                pct = ((current - prevClose) / prevClose) * 100;
+                            }
+                            totalContribution += (stock.percent * pct) / 100;
+                        }
+                    });
+                    
+                    // 计算估值
+                    const nav = parseFloat(data.nav || data.officialNav || 0);
+                    let est = '--';
+                    if (nav > 0) est = (nav * (1 + totalContribution/100)).toFixed(4);
+
+                    cache[code].rtVal = est;
+                    cache[code].rtChange = totalContribution.toFixed(2);
+                    cache[code].sourceType = 'self';
+                    renderRow(code);
+                };
+                script.onerror = () => { 
+                    // 失败则回退官方
+                    fallbackToOfficial(code); 
+                };
+                document.body.appendChild(script);
+            }
+            // 3. 兜底模式
+            else {
+                fallbackToOfficial(code);
+            }
         }
 
-        function fetchSelfValuation(code, holdings) {
-            const queryList = holdings.map(s => {
-                let prefix = '';
-                if (/^[569]/.test(s.code)) prefix = 'sh';
-                else if (/^[0123]/.test(s.code)) prefix = 'sz';
-                else if (/^[48]/.test(s.code)) prefix = 'bj';
-                else if (/^0/.test(s.code) && s.code.length === 5) prefix = 'rt_hk';
-                return prefix + s.code;
-            }).join(',');
-
+        function fetchSinaData(code, symbol, callback) {
             const script = document.createElement('script');
-            script.src = `https://hq.sinajs.cn/list=${queryList}`;
+            script.src = `https://hq.sinajs.cn/list=${symbol}`;
             script.charset = 'gbk';
             script.onload = () => {
-                let totalContribution = 0;
-                holdings.forEach(stock => {
-                    let prefix = '';
-                    if (/^[569]/.test(stock.code)) prefix = 'sh';
-                    else if (/^[0123]/.test(stock.code)) prefix = 'sz';
-                    else if (/^[48]/.test(stock.code)) prefix = 'bj';
-                    else if (/^0/.test(stock.code)) prefix = 'rt_hk';
-                    
-                    const dataStr = window[`hq_str_${prefix}${stock.code}`];
-                    if (dataStr) {
-                        const parts = dataStr.split(',');
-                        let current, prevClose, changePct = 0;
-                        if (prefix === 'rt_hk') {
-                            current = parseFloat(parts[6]); prevClose = parseFloat(parts[3]);
-                        } else {
-                            current = parseFloat(parts[3]); prevClose = parseFloat(parts[2]);
-                        }
-                        // 修正：只有当开盘后才有数据
-                        if (prevClose > 0 && current > 0) {
-                            changePct = ((current - prevClose) / prevClose) * 100;
-                        }
-                        totalContribution += (stock.percent * changePct) / 100;
-                    }
-                });
-
-                const nav = parseFloat(cache[code].nav || 0);
-                let estimatedVal = '--';
-                if (nav > 0) estimatedVal = (nav * (1 + totalContribution / 100)).toFixed(4);
-
-                cache[code].rtVal = estimatedVal;
-                cache[code].rtChange = totalContribution.toFixed(2);
-                renderRow(code);
-            };
-            document.body.appendChild(script);
-        }
-
-        // [新增] 官方估值兜底函数
-        function fetchOfficialFallback(code) {
-            const script = document.createElement('script');
-            // 注意：这里使用 fundgz 接口作为最后的防线
-            script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-            // 覆盖全局回调
-            const originalCallback = window.jsonpgz;
-            window.jsonpgz = function(data) {
-                if (data.fundcode !== code) {
-                    if(originalCallback) originalCallback(data);
-                    return;
-                }
-                
-                // 只有当是 'official' 模式才更新数据
-                if (cache[code].sourceType === 'official') {
-                    cache[code].rtVal = data.gsz;
-                    cache[code].rtChange = data.gszzl;
-                    if(!cache[code].name) cache[code].name = data.name;
-                    renderRow(code);
+                const val = window[`hq_str_${symbol}`];
+                if (val) {
+                    const parts = val.split(',');
+                    const current = parseFloat(parts[3] == 0 ? parts[2] : parts[3]);
+                    const prev = parseFloat(parts[2]);
+                    let pct = 0;
+                    if (prev > 0) pct = ((current - prev) / prev) * 100;
+                    callback(current, pct);
                 }
             };
             document.body.appendChild(script);
         }
 
-        // --- 业务与交互 ---
-        function toggleEditMode() {
-            isEditMode = !isEditMode;
-            const btn = document.getElementById('editBtn');
-            const addBar = document.getElementById('addBar');
-            const editTip = document.getElementById('editTip');
-            
-            if (isEditMode) {
-                btn.classList.add('bg-blue-100', 'text-blue-600');
-                btn.innerHTML = '完成';
-                addBar.classList.add('hidden');
-                editTip.classList.remove('hidden');
-                initSortable();
-            } else {
-                btn.classList.remove('bg-blue-100', 'text-blue-600');
-                btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg>';
-                addBar.classList.remove('hidden');
-                editTip.classList.add('hidden');
-                if (sortableInstance) sortableInstance.destroy();
+        function fallbackToOfficial(code) {
+            cache[code].sourceType = 'official';
+            // 使用之前 fetchFastData 拿到的数据
+            if (cache[code].officialVal) {
+                cache[code].rtVal = cache[code].officialVal;
+                cache[code].rtChange = cache[code].officialRate;
             }
-            renderAll();
+            renderRow(code);
         }
 
-        function initSortable() {
-            const tbody = document.getElementById('fundTableBody');
-            sortableInstance = new Sortable(tbody, {
-                handle: '.drag-handle',
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                dragClass: 'sortable-drag',
-                onEnd: function (evt) {
-                    const item = db.splice(evt.oldIndex, 1)[0];
-                    db.splice(evt.newIndex, 0, item);
-                    saveDb();
-                }
-            });
-        }
+        // --- 主流程 ---
+        async function fullReload() {
+            updateProgress(10);
+            HeavyLoader.queue = [];
+            HeavyLoader.isRunning = false; // 强制重置锁
+            
+            // 1. 并发获取基础数据 (防止白屏)
+            const promises = db.map(item => fetchFastData(item.code));
+            await Promise.all(promises);
+            updateProgress(30);
 
-        function refreshAll() {
-            updateStatus('更新中...');
-            db.forEach(item => {
-                if(!cache[item.code]?.name) fetchBasicInfo(item.code);
-                // 强制重新决策，防止数据源状态卡死
-                if (cache[item.code] && cache[item.code].holdings) {
-                    decideAndFetchRealTime(item.code);
-                } else {
-                    NavLoader.add(item.code);
-                }
-            });
-            setTimeout(() => updateStatus('监控中'), 2000);
+            // 2. 启动重型队列 (用于获取持仓)
+            db.forEach(item => HeavyLoader.add(item.code));
         }
 
         function addNewFund() {
@@ -335,15 +357,15 @@
             if (/^\d{6}$/.test(code) && !db.find(i => i.code === code)) {
                 db.unshift({ code: code, proxy: '' });
                 saveDb();
-                fetchBasicInfo(code);
-                NavLoader.add(code);
                 renderAll();
                 input.value = '';
+                // 单独触发该基金的加载
+                fetchFastData(code).then(() => HeavyLoader.add(code));
             }
         }
 
         function removeFund(code) {
-            if(confirm('移除？')) {
+            if(confirm('移除?')) {
                 db = db.filter(i => i.code !== code);
                 saveDb();
                 renderAll();
@@ -362,26 +384,27 @@
                 }
                 item.proxy = val;
                 saveDb();
-                if(cache[code]) { 
-                    delete cache[code].rtVal; 
-                    delete cache[code].rtChange; 
-                    cache[code].sourceType = ''; // 重置状态
-                }
-                renderRow(code); // 清空旧数据
-                refreshAll();    // 重新获取
+                cache[code].sourceType = item.proxy ? 'proxy' : 'self';
+                renderRow(code);
+                fetchRealTime(code); // 立即刷新
             }
         }
 
-        function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
-        function updateStatus(msg) { document.getElementById('globalStatus').innerText = msg; }
+        function hardReset() {
+            if(confirm('重置会清空所有数据，确定吗？')) {
+                localStorage.removeItem(STORAGE_KEY);
+                location.reload();
+            }
+        }
 
-        // 渲染
+        // --- UI 渲染 ---
         function renderAll() {
             const tbody = document.getElementById('fundTableBody');
             tbody.innerHTML = '';
             const empty = document.getElementById('emptyState');
             if (db.length === 0) { empty.classList.remove('hidden'); return; }
             empty.classList.add('hidden');
+            
             db.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.id = `row-${item.code}`;
@@ -399,19 +422,20 @@
             const data = cache[code] || {};
 
             const name = data.name || code;
-            const nav = data.nav || '--';
-            const navDate = data.navDate || '--';
-            const rtVal = data.rtVal || '--';
-            const rtChange = data.rtChange || 0;
-            const sourceType = data.sourceType || ''; // proxy, self, official
+            // 优先使用 K线里的精准净值，没有则用官方接口的昨日净值
+            const nav = data.nav || data.officialNav || '--';
+            const navDate = data.navDate || data.officialDate || '--';
+            
+            const rtVal = data.rtVal || data.officialVal || '--';
+            const rtChange = data.rtChange || data.officialRate || 0;
+            const sourceType = data.sourceType || 'loading';
 
             const isUp = parseFloat(rtChange) >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500';
             const bgClass = isUp ? 'bg-red-50' : 'bg-green-50';
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
-            let subTag = '', valLabel = '';
-
+            let valLabel = '', subTag = '';
             if (sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">⚓ETF</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-mono mt-1 scale-90 origin-right whitespace-nowrap">⚓ ${item.proxy}</div>`;
@@ -422,18 +446,14 @@
                 valLabel = '<span class="text-slate-400">官方</span>';
                 subTag = `<div class="text-[10px] text-slate-300 scale-90 origin-right mt-1">兜底接口</div>`;
             } else {
-                valLabel = '<span class="text-slate-200">--</span>';
+                valLabel = '<span class="text-slate-200">...</span>';
             }
 
-            let lastColHtml = '';
+            let lastCol = '';
             if (isEditMode) {
-                lastColHtml = `<div class="drag-handle cursor-move p-3 text-slate-400 hover:text-slate-600 flex justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></div>`;
+                lastCol = `<div class="drag-handle cursor-move p-3 text-slate-400 flex justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></div>`;
             } else {
-                lastColHtml = `
-                    <div class="flex flex-col gap-2 items-center">
-                        <button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button>
-                        <button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                    </div>`;
+                lastCol = `<div class="flex flex-col gap-2 items-center"><button onclick="bindProxy('${code}')" class="text-slate-300 hover:text-blue-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg></button><button onclick="removeFund('${code}')" class="text-slate-300 hover:text-red-500 p-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`;
             }
 
             tr.innerHTML = `
@@ -455,12 +475,48 @@
                     </div>
                     ${subTag}
                 </td>
-                <td class="py-3 px-1 text-center align-middle w-10">${lastColHtml}</td>
+                <td class="py-3 px-1 text-center align-middle w-10">${lastCol}</td>
             `;
         }
 
-        refreshAll();
-        setInterval(refreshAll, 60000);
+        // 排序与杂项
+        function toggleEditMode() {
+            isEditMode = !isEditMode;
+            const btn = document.getElementById('editBtn');
+            const addBar = document.getElementById('addBar');
+            const editTip = document.getElementById('editTip');
+            if (isEditMode) {
+                btn.classList.add('bg-blue-100', 'text-blue-600');
+                addBar.classList.add('hidden');
+                editTip.classList.remove('hidden');
+                sortableInstance = new Sortable(document.getElementById('fundTableBody'), {
+                    handle: '.drag-handle', animation: 150,
+                    onEnd: (evt) => {
+                        const item = db.splice(evt.oldIndex, 1)[0];
+                        db.splice(evt.newIndex, 0, item);
+                        saveDb();
+                    }
+                });
+            } else {
+                btn.classList.remove('bg-blue-100', 'text-blue-600');
+                addBar.classList.remove('hidden');
+                editTip.classList.add('hidden');
+                if (sortableInstance) sortableInstance.destroy();
+            }
+            renderAll();
+        }
+
+        function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+        function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
+
+        // 启动
+        renderAll();
+        fullReload();
+        // 自动刷新: 快速刷新实时估值(15s), 慢速刷新结构(不刷)
+        setInterval(() => {
+            db.forEach(item => fetchRealTime(item.code));
+        }, 15000);
+
     </script>
 </body>
 </html>
