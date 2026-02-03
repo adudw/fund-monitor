@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V17.4</title>
+    <title>基金涨跌监控 V18.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V17.4</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V18.0</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -147,6 +147,11 @@
             cache[code].name = data.name;
             cache[code].officialNav = data.dwjz; 
             cache[code].officialDate = data.jzrq ? data.jzrq.substring(5) : '--';
+            
+            // [新增] 保存官方估值时间 (如 02-03)
+            // gztime 格式 "2026-02-03 10:55", 截取 02-03
+            cache[code].officialGzDate = data.gztime ? data.gztime.substring(5, 10) : '--';
+
             if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
                 cache[code].rtVal = data.gsz; cache[code].rtChange = data.gszzl; cache[code].sourceType = 'official';
             }
@@ -201,6 +206,11 @@
             const data = cache[code];
             if (!item) { ProgressMgr.tick(); return; }
             const onDone = () => ProgressMgr.tick();
+
+            // [新增] 获取当前日期作为实时数据的时间戳
+            const now = new Date();
+            const rtDateStr = `${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}`;
+            cache[code].rtDate = rtDateStr;
 
             if (item.proxy) {
                 cache[code].sourceType = 'proxy'; renderRow(code); 
@@ -297,22 +307,13 @@
                 '请输入关联指数代码 (如 515880)\n支持自动补全沪深/港/美股\n\n⚠ 留空并点击确定即可【取消关联】\n当前关联: ' + (item.proxy || '无'), 
                 '' 
             );
-            
             if (input !== null) {
                 let val = input.trim();
-                // [Feature] V17.4: 留空即清除
                 if (val === '') {
-                    delete item.proxy; // 移除属性
-                    saveDb();
-                    // 重置状态
+                    delete item.proxy; saveDb();
                     if(cache[code]) { cache[code].sourceType = ''; cache[code].proxyError = false; }
-                    renderRow(code); 
-                    // 重新决策数据源（拟合或官方）
-                    HeavyLoader.add(code); 
-                    return;
+                    renderRow(code); HeavyLoader.add(code); return;
                 }
-
-                // 常规绑定逻辑
                 if (/^\d+$/.test(val)) {
                     if (val.length === 5) val = 'hk' + val;
                     else if (/^000/.test(val)) val = 'sh' + val;
@@ -349,18 +350,25 @@
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
             let valLabel = '', subTag = '';
+            // [新增] 估值日期变量
+            let valDate = '--';
+
             if (data.proxyError) {
                 valLabel = '<span class="text-red-500 font-bold">⚠️ 无效</span>';
-                subTag = `<div class="text-[10px] text-red-400 font-medium scale-90 origin-right mt-1 whitespace-nowrap">代码无效 ${item.proxy}</div>`;
+                subTag = `<div class="text-[10px] text-red-400 font-medium scale-90 origin-right whitespace-nowrap">代码无效 ${item.proxy}</div>`;
+                valDate = data.officialGzDate || '--'; // 错误时显示官方时间
             } else if (data.sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">指数</span>';
-                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1 whitespace-nowrap">关联指数 ${item.proxy}</div>`;
+                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right whitespace-nowrap">关联指数 ${item.proxy}</div>`;
+                valDate = data.rtDate || '--'; // 实时时间
             } else if (data.sourceType === 'self') {
                 valLabel = '<span class="text-orange-500 font-bold">拟合</span>';
-                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1">重仓拟合</div>`;
+                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right">重仓拟合</div>`;
+                valDate = data.rtDate || '--'; // 实时时间
             } else {
                 valLabel = '<span class="text-slate-400">官方</span>';
-                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right mt-1">天天基金</div>`;
+                subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right">天天基金</div>`;
+                valDate = data.officialGzDate || '--'; // 官方时间
             }
 
             let lastCol = isEditMode 
@@ -378,11 +386,14 @@
                 </td>
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono ${colorClass} font-bold">${rtVal}</div>
-                    <div class="text-[10px] scale-90 origin-right mt-0.5">${valLabel}</div>
+                    <div class="flex flex-col items-end mt-0.5 space-y-0.5">
+                        <span class="text-[10px] text-slate-400 font-mono scale-90 origin-right leading-none">${valDate}</span>
+                        <div class="text-[10px] scale-90 origin-right leading-none">${valLabel}</div>
+                    </div>
                 </td>
                 <td class="py-3 px-3 text-right align-top">
                     <div class="inline-flex items-center justify-center min-w-[56px] px-1.5 py-1.5 rounded-lg text-xs font-bold font-mono tracking-tight ${colorClass} ${bgClass}">${sign}${rtChange}%</div>
-                    ${subTag}
+                    <div class="mt-1">${subTag}</div>
                 </td>
                 <td class="py-3 px-1 text-center align-middle w-10">${lastCol}</td>`;
         }
