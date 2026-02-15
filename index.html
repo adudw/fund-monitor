@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V18.0</title>
+    <title>基金涨跌监控 V18.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -32,16 +32,22 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V18.0</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V18.1</span>
                 </div>
 
                 <div class="flex items-center gap-2">
-                    <div class="h-8 flex items-center gap-2 bg-slate-100 rounded-lg px-3 mr-1 shadow-sm border border-slate-200">
-                        <span class="text-[10px] text-slate-500 font-bold whitespace-nowrap">重仓拟合</span>
+                    <div class="h-8 flex items-center gap-2 bg-slate-100 rounded-lg px-3 shadow-sm border border-slate-200">
+                        <span class="text-[10px] text-slate-500 font-bold whitespace-nowrap">拟合</span>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="fittingToggle" class="sr-only peer" onchange="toggleFitting()">
                             <div class="w-7 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
                         </label>
+                    </div>
+
+                    <div class="h-8 flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 shadow-sm">
+                        <button onclick="importBatch()" class="h-full px-2 text-[10px] font-bold text-slate-500 hover:bg-white hover:text-blue-600 rounded-md transition-all active:scale-95">导入</button>
+                        <div class="w-[1px] h-3 bg-slate-300 mx-0.5"></div>
+                        <button onclick="exportBatch()" class="h-full px-2 text-[10px] font-bold text-slate-500 hover:bg-white hover:text-blue-600 rounded-md transition-all active:scale-95">导出</button>
                     </div>
 
                     <button onclick="toggleEditMode()" id="editBtn" class="h-8 w-8 flex items-center justify-center bg-slate-100 rounded-lg text-slate-500 active:scale-95 transition hover:bg-slate-200 border border-transparent">
@@ -141,15 +147,47 @@
             }
         };
 
+        // [新增] 批量导出功能
+        function exportBatch() {
+            if (db.length === 0) { alert('当前监控列表为空'); return; }
+            const codes = db.map(i => i.code).join(',');
+            navigator.clipboard.writeText(codes).then(() => {
+                alert('已复制所有代码至剪贴板: \n' + codes);
+            }).catch(err => {
+                prompt('请手动复制以下代码:', codes);
+            });
+        }
+
+        // [新增] 批量导入功能
+        async function importBatch() {
+            const input = prompt('请输入基金代码 (以逗号分隔): \n例如: 005827,000217');
+            if (!input) return;
+            
+            // 处理输入格式：转换中文逗号、分割、去重、过滤非法格式
+            const incoming = input.replace(/，/g, ',').split(',')
+                             .map(c => c.trim())
+                             .filter(c => /^\d{6}$/.test(c));
+            
+            if (incoming.length === 0) { alert('未识别到有效的6位基金代码'); return; }
+            
+            const existingCodes = db.map(i => i.code);
+            const newItems = incoming.filter(c => !existingCodes.includes(c))
+                             .map(c => ({ code: c, proxy: '' }));
+            
+            if (newItems.length === 0) { alert('所输入的基金已在列表中'); return; }
+            
+            db = [...newItems, ...db]; // 新导入的排在前面
+            saveDb();
+            fullReload();
+            alert(`成功导入 ${newItems.length} 支新基金`);
+        }
+
         window.jsonpgz = function(data) {
             const code = data.fundcode;
             if (!cache[code]) cache[code] = {};
             cache[code].name = data.name;
             cache[code].officialNav = data.dwjz; 
             cache[code].officialDate = data.jzrq ? data.jzrq.substring(5) : '--';
-            
-            // [新增] 保存官方估值时间 (如 02-03)
-            // gztime 格式 "2026-02-03 10:55", 截取 02-03
             cache[code].officialGzDate = data.gztime ? data.gztime.substring(5, 10) : '--';
 
             if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
@@ -172,6 +210,7 @@
         const HeavyLoader = {
             queue: [], isRunning: false,
             add(code) {
+                if (!cache[code]) cache[code] = {};
                 if (cache[code].sourceType === 'proxy' || !isFittingEnabled || cache[code].holdings) { fetchRealTime(code); return; }
                 this.queue.push(code); this.run();
             },
@@ -207,7 +246,6 @@
             if (!item) { ProgressMgr.tick(); return; }
             const onDone = () => ProgressMgr.tick();
 
-            // [新增] 获取当前日期作为实时数据的时间戳
             const now = new Date();
             const rtDateStr = `${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}`;
             cache[code].rtDate = rtDateStr;
@@ -225,13 +263,7 @@
                 });
             } else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
                 const queryList = data.holdings.map(s => {
-                    let prefix = '';
-                    if (s.code.length === 5) prefix = 'hk';
-                    else if (/^6/.test(s.code)) prefix = 'sh'; 
-                    else if (/^0/.test(s.code)) prefix = 'sz'; 
-                    else if (/^3/.test(s.code)) prefix = 'sz'; 
-                    else if (/^8/.test(s.code) || /^4/.test(s.code)) prefix = 'bj';
-                    else prefix = 'sh'; 
+                    let prefix = (s.code.length === 5) ? 'hk' : (/^6/.test(s.code) ? 'sh' : (/^[03]/.test(s.code) ? 'sz' : (/^[48]/.test(s.code) ? 'bj' : 'sh')));
                     return prefix + s.code;
                 }).join(',');
                 const script = document.createElement('script');
@@ -281,9 +313,10 @@
         }
 
         function fallbackToOfficial(code) {
+            if(!cache[code]) return;
             cache[code].sourceType = 'official';
             if (cache[code].backupVal) { cache[code].rtVal = cache[code].backupVal; cache[code].rtChange = cache[code].backupChange; }
-            else if (cache[code].officialVal) { cache[code].rtVal = cache[code].officialVal; cache[code].rtChange = cache[code].officialRate; }
+            else if (cache[code].officialNav) { cache[code].rtVal = cache[code].officialNav; cache[code].rtChange = '--'; }
             renderRow(code);
         }
 
@@ -298,7 +331,9 @@
             } else alert('请输入6位数字代码');
         }
         document.getElementById('modalInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') confirmAdd(); });
+        
         function fullReload() { ProgressMgr.init(db.length); HeavyLoader.queue = []; HeavyLoader.isRunning = false; db.forEach(i => { if(!cache[i.code]) cache[i.code]={}; if(i.proxy) cache[i.code].sourceType='proxy'; }); renderAll(); Promise.all(db.map(i => fetchFastData(i.code))).then(() => { ProgressMgr.setPhase1Done(); db.forEach(i => HeavyLoader.add(i.code)); }); }
+        
         function removeFund(code) { if(confirm('确定移除该基金吗？')) { db = db.filter(i => i.code !== code); saveDb(); renderAll(); } }
         
         function bindProxy(code) {
@@ -332,7 +367,6 @@
 
         function hardReset() { if(confirm('【警告】重置将清空所有基金数据，恢复到初始状态。确定吗？')) { localStorage.removeItem(STORAGE_KEY); location.reload(); } }
         function saveDb() { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
-        function updateProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
         function toggleEditMode() { isEditMode = !isEditMode; const btn = document.getElementById('editBtn'); const tip = document.getElementById('editTip'); if(isEditMode) { btn.classList.add('bg-blue-100','text-blue-600'); tip.classList.remove('hidden'); sortableInstance = new Sortable(document.getElementById('fundTableBody'), { handle: '.drag-handle', animation: 150, onEnd: (evt) => { const item = db.splice(evt.oldIndex, 1)[0]; db.splice(evt.newIndex, 0, item); saveDb(); } }); } else { btn.classList.remove('bg-blue-100','text-blue-600'); tip.classList.add('hidden'); if(sortableInstance) sortableInstance.destroy(); } renderAll(); }
 
         function renderRow(code) {
@@ -349,26 +383,24 @@
             const bgClass = isUp ? 'bg-red-50' : 'bg-green-50';
             const sign = parseFloat(rtChange) > 0 ? '+' : '';
 
-            let valLabel = '', subTag = '';
-            // [新增] 估值日期变量
-            let valDate = '--';
+            let valLabel = '', subTag = '', valDate = '--';
 
             if (data.proxyError) {
                 valLabel = '<span class="text-red-500 font-bold">⚠️ 无效</span>';
                 subTag = `<div class="text-[10px] text-red-400 font-medium scale-90 origin-right whitespace-nowrap">代码无效 ${item.proxy}</div>`;
-                valDate = data.officialGzDate || '--'; // 错误时显示官方时间
+                valDate = data.officialGzDate || '--';
             } else if (data.sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">指数</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right whitespace-nowrap">关联指数 ${item.proxy}</div>`;
-                valDate = data.rtDate || '--'; // 实时时间
+                valDate = data.rtDate || '--';
             } else if (data.sourceType === 'self') {
                 valLabel = '<span class="text-orange-500 font-bold">拟合</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right">重仓拟合</div>`;
-                valDate = data.rtDate || '--'; // 实时时间
+                valDate = data.rtDate || '--';
             } else {
                 valLabel = '<span class="text-slate-400">官方</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right">天天基金</div>`;
-                valDate = data.officialGzDate || '--'; // 官方时间
+                valDate = data.officialGzDate || '--';
             }
 
             let lastCol = isEditMode 
