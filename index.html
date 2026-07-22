@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
-    <title>基金涨跌监控 V18.1</title>
+    <title>基金涨跌监控 V18.2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <style>
@@ -32,7 +32,7 @@
             <div class="flex justify-between items-center mb-1">
                 <div class="flex items-center gap-2">
                     <h1 class="text-lg font-bold text-slate-800 tracking-tight">基金监控</h1>
-                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V18.1</span>
+                    <span id="globalStatus" class="text-[10px] text-white bg-indigo-500 px-1.5 py-0.5 rounded font-mono font-bold">V18.2</span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -182,37 +182,42 @@
             alert(`成功导入 ${newItems.length} 支新基金`);
         }
 
+        // [V18.2] fundgz 接口已停服，改用 pingzhongdata 获取名称+净值
         window.jsonpgz = function(data) {
-            const code = data.fundcode;
-            if (!cache[code]) cache[code] = {};
-            cache[code].name = data.name;
-            cache[code].officialNav = data.dwjz; 
-            cache[code].officialDate = data.jzrq ? data.jzrq.substring(5) : '--';
-            cache[code].officialGzDate = data.gztime ? data.gztime.substring(5, 10) : '--';
-
-            if (cache[code].sourceType !== 'proxy' && cache[code].sourceType !== 'self') {
-                cache[code].rtVal = data.gsz; cache[code].rtChange = data.gszzl; cache[code].sourceType = 'official';
-            }
-            cache[code].backupVal = data.gsz; cache[code].backupChange = data.gszzl;
-            renderRow(code);
+            // 空实现，仅为兼容浏览器缓存中可能残留的 <script> 回调
         };
 
-        function fetchFastData(code) {
+        // [V18.2] 新增：并行获取基金名称（fundsuggest 每个回调独立，可并行）
+        function fetchName(code) {
             return new Promise((resolve) => {
+                const callbackName = 'fs_' + code + '_' + Date.now();
                 const script = document.createElement('script');
-                script.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`;
-                script.onload = () => { try { document.body.removeChild(script); } catch(e){} resolve(); };
-                script.onerror = () => { try { document.body.removeChild(script); } catch(e){} resolve(); };
+                script.src = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?callback=${callbackName}&m=1&key=${code}`;
+                window[callbackName] = function(res) {
+                    try { document.body.removeChild(script); } catch(e){}
+                    delete window[callbackName];
+                    if (res && res.Datas && res.Datas[0]) {
+                        cache[code].name = res.Datas[0].NAME;
+                    }
+                    resolve();
+                };
+                script.onerror = () => { try { document.body.removeChild(script); } catch(e){} delete window[callbackName]; resolve(); };
                 document.body.appendChild(script);
             });
         }
 
+        function fetchFastData(code) {
+            return fetchName(code);
+        }
+
+        // [V18.2] HeavyLoader 改为始终运行，获取 NAV+持仓，不再依赖 isFittingEnabled
         const HeavyLoader = {
             queue: [], isRunning: false,
             add(code) {
                 if (!cache[code]) cache[code] = {};
-                if (cache[code].sourceType === 'proxy' || !isFittingEnabled || cache[code].holdings) { fetchRealTime(code); return; }
-                this.queue.push(code); this.run();
+                if (cache[code].holdings && cache[code].nav) { fetchRealTime(code); return; }
+                if (!cache[code].nav) { this.queue.push(code); this.run(); }
+                else { fetchRealTime(code); }
             },
             run() {
                 if (this.isRunning || this.queue.length === 0) return;
@@ -222,6 +227,8 @@
                 script.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?t=${Date.now()}`;
                 script.onload = () => {
                     if (!cache[code]) cache[code] = {};
+                    // [V18.2] fS_name 比 fundsuggest 更可靠，优先使用
+                    if (window.fS_name) cache[code].name = window.fS_name;
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
                         const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
                         cache[code].nav = last.y;
@@ -236,7 +243,7 @@
                     }
                     finish();
                 };
-                script.onerror = finish; document.body.appendChild(script); setTimeout(finish, 5000); 
+                script.onerror = finish; document.body.appendChild(script); setTimeout(finish, 5000);
             }
         };
 
@@ -251,11 +258,11 @@
             cache[code].rtDate = rtDateStr;
 
             if (item.proxy) {
-                cache[code].sourceType = 'proxy'; renderRow(code); 
+                cache[code].sourceType = 'proxy'; renderRow(code);
                 fetchTencentData(item.proxy, (current, percent) => {
                     if (current > 0) {
                         cache[code].rtVal = current.toFixed(3); cache[code].rtChange = percent.toFixed(2);
-                        cache[code].proxyError = false; 
+                        cache[code].proxyError = false;
                     } else {
                         cache[code].proxyError = true;
                     }
@@ -282,7 +289,7 @@
                     });
                     try { document.body.removeChild(script); } catch(e){}
                     if (valid > 0) {
-                        const nav = parseFloat(data.nav || data.officialNav || 0);
+                        const nav = parseFloat(data.nav || 0);
                         if (nav > 0) cache[code].rtVal = (nav * (1 + total/100)).toFixed(4);
                         cache[code].rtChange = total.toFixed(2);
                         cache[code].sourceType = 'self';
@@ -312,11 +319,12 @@
             document.body.appendChild(script);
         }
 
+        // [V18.2] fundgz 停服后不再有 backupVal/backupChange，兜底用官方净值
         function fallbackToOfficial(code) {
             if(!cache[code]) return;
             cache[code].sourceType = 'official';
-            if (cache[code].backupVal) { cache[code].rtVal = cache[code].backupVal; cache[code].rtChange = cache[code].backupChange; }
-            else if (cache[code].officialNav) { cache[code].rtVal = cache[code].officialNav; cache[code].rtChange = '--'; }
+            if (cache[code].nav) { cache[code].rtVal = cache[code].nav.toFixed(4); cache[code].rtChange = '--'; }
+            else { cache[code].rtVal = '--'; cache[code].rtChange = '--'; }
             renderRow(code);
         }
 
@@ -332,7 +340,7 @@
         }
         document.getElementById('modalInput').addEventListener('keypress', function (e) { if (e.key === 'Enter') confirmAdd(); });
         
-        function fullReload() { ProgressMgr.init(db.length); HeavyLoader.queue = []; HeavyLoader.isRunning = false; db.forEach(i => { if(!cache[i.code]) cache[i.code]={}; if(i.proxy) cache[i.code].sourceType='proxy'; }); renderAll(); Promise.all(db.map(i => fetchFastData(i.code))).then(() => { ProgressMgr.setPhase1Done(); db.forEach(i => HeavyLoader.add(i.code)); }); }
+        function fullReload() { ProgressMgr.init(db.length); HeavyLoader.queue = []; HeavyLoader.isRunning = false; db.forEach(i => { if(!cache[i.code]) cache[i.code]={}; if(i.proxy) cache[i.code].sourceType='proxy'; else if(!cache[i.code].sourceType) cache[i.code].sourceType=''; }); renderAll(); Promise.all(db.map(i => fetchFastData(i.code))).then(() => { ProgressMgr.setPhase1Done(); db.forEach(i => HeavyLoader.add(i.code)); }); }
         
         function removeFund(code) { if(confirm('确定移除该基金吗？')) { db = db.filter(i => i.code !== code); saveDb(); renderAll(); } }
         
@@ -372,11 +380,18 @@
         function renderRow(code) {
             const tr = document.getElementById(`row-${code}`); if (!tr) return;
             const item = db.find(i => i.code === code); const data = cache[code] || {};
-            const nav = data.nav || data.officialNav || '--';
-            
+            const nav = data.nav || '--';
+
+            // [V18.2] rtVal: proxy/fitting 填实时值，official 用 nav 作为显示值
             let rtVal = data.rtVal; let rtChange = data.rtChange || 0;
-            if (data.proxyError) { rtVal = data.backupVal || '--'; rtChange = data.backupChange || 0; }
-            else rtVal = rtVal || '--';
+            if (data.proxyError) { rtVal = '⚠'; rtChange = 0; }
+            else if (!rtVal || rtVal === '...') {
+                if (data.sourceType === 'official' && data.nav) {
+                    rtVal = data.nav.toFixed(4);
+                } else {
+                    rtVal = '...';
+                }
+            }
 
             const isUp = parseFloat(rtChange) >= 0;
             const colorClass = isUp ? 'text-red-500' : 'text-green-500';
@@ -388,7 +403,7 @@
             if (data.proxyError) {
                 valLabel = '<span class="text-red-500 font-bold">⚠️ 无效</span>';
                 subTag = `<div class="text-[10px] text-red-400 font-medium scale-90 origin-right whitespace-nowrap">代码无效 ${item.proxy}</div>`;
-                valDate = data.officialGzDate || '--';
+                valDate = data.rtDate || '--';
             } else if (data.sourceType === 'proxy') {
                 valLabel = '<span class="text-blue-500 font-bold">指数</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right whitespace-nowrap">关联指数 ${item.proxy}</div>`;
@@ -400,7 +415,7 @@
             } else {
                 valLabel = '<span class="text-slate-400">官方</span>';
                 subTag = `<div class="text-[10px] text-slate-400 font-medium scale-90 origin-right">天天基金</div>`;
-                valDate = data.officialGzDate || '--';
+                valDate = data.navDate || '--';
             }
 
             let lastCol = isEditMode 
@@ -414,7 +429,7 @@
                 </td>
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono text-slate-600 font-bold">${nav}</div>
-                    <div class="text-[10px] text-slate-400 scale-90 origin-right mt-0.5">${data.officialDate||'--'}</div>
+                    <div class="text-[10px] text-slate-400 scale-90 origin-right mt-0.5">${data.navDate||'--'}</div>
                 </td>
                 <td class="py-3 px-2 text-right align-top">
                     <div class="text-sm font-mono ${colorClass} font-bold">${rtVal}</div>
