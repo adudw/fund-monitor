@@ -133,7 +133,8 @@
         let isEditMode = false;
         let sortableInstance = null;
         let isFittingEnabled = JSON.parse(localStorage.getItem('fitting_enabled') || 'false');
-        document.getElementById('fittingToggle').checked = isFittingEnabled;
+        const fittingEl = document.getElementById('fittingToggle');
+        if (fittingEl) fittingEl.checked = isFittingEnabled;
 
         const ProgressMgr = {
             total: 0, completed: 0,
@@ -338,7 +339,7 @@
             renderRow(code);
         }
 
-        function toggleFitting() { isFittingEnabled = document.getElementById('fittingToggle').checked; localStorage.setItem('fitting_enabled', isFittingEnabled); fullReload(); }
+        function toggleFitting() { const el = document.getElementById('fittingToggle'); if (!el) return; isFittingEnabled = el.checked; localStorage.setItem('fitting_enabled', isFittingEnabled); fullReload(); }
         function openAddModal() { document.getElementById('addModal').classList.remove('hidden'); document.getElementById('modalContent').classList.add('modal-enter-active'); setTimeout(() => document.getElementById('modalInput').focus(), 50); }
         function closeAddModal() { document.getElementById('addModal').classList.add('hidden'); }
         function confirmAdd() {
