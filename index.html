@@ -230,10 +230,16 @@
                     // [V18.2] fS_name 比 fundsuggest 更可靠，优先使用
                     if (window.fS_name) cache[code].name = window.fS_name;
                     if (window.Data_netWorthTrend && window.Data_netWorthTrend.length > 0) {
-                        const last = window.Data_netWorthTrend[window.Data_netWorthTrend.length - 1];
+                        const len = window.Data_netWorthTrend.length;
+                        const last = window.Data_netWorthTrend[len - 1];
                         cache[code].nav = last.y;
                         const d = new Date(last.x);
                         cache[code].navDate = `${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}`;
+                        // [V18.2] 用最新两个净值计算涨跌幅（盘后用昨日净值对比）
+                        if (len >= 2) {
+                            const prev = window.Data_netWorthTrend[len - 2];
+                            if (prev.y > 0) cache[code].navChange = (((last.y - prev.y) / prev.y) * 100).toFixed(2);
+                        }
                     }
                     if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
                         const rep = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
@@ -319,12 +325,16 @@
             document.body.appendChild(script);
         }
 
-        // [V18.2] fundgz 停服后不再有 backupVal/backupChange，兜底用官方净值
+        // [V18.2] fundgz 停服后不再有 backupVal/backupChange，用历史净值涨跌
         function fallbackToOfficial(code) {
             if(!cache[code]) return;
             cache[code].sourceType = 'official';
-            if (cache[code].nav) { cache[code].rtVal = cache[code].nav.toFixed(4); cache[code].rtChange = '--'; }
-            else { cache[code].rtVal = '--'; cache[code].rtChange = '--'; }
+            if (cache[code].nav) {
+                cache[code].rtVal = cache[code].nav.toFixed(4);
+                cache[code].rtChange = cache[code].navChange || '--';
+            } else {
+                cache[code].rtVal = '--'; cache[code].rtChange = '--';
+            }
             renderRow(code);
         }
 
