@@ -125,9 +125,8 @@
         let cache = {};
         let isEditMode = false;
         let sortableInstance = null;
-        let isFittingEnabled = JSON.parse(localStorage.getItem('fitting_enabled') || 'false');
-        const fittingEl = document.getElementById('fittingToggle');
-        if (fittingEl) fittingEl.checked = isFittingEnabled;
+        // [V18.3] 拟合模式默认开启，用 stockCodesNew 持仓股票实时行情计算涨跌
+        let isFittingEnabled = true;
 
         const ProgressMgr = {
             total: 0, completed: 0,
@@ -235,11 +234,24 @@
                             if (prev.y > 0) cache[code].navChange = (((last.y - prev.y) / prev.y) * 100).toFixed(2);
                         }
                     }
-                    if (window.Data_fundSharesPositions && window.Data_fundSharesPositions.length > 0) {
-                        const rep = window.Data_fundSharesPositions[window.Data_fundSharesPositions.length - 1];
+                    // [V18.3] 用 stockCodesNew 解析持仓（Data_fundSharesPositions 已改版不再含个股）
+                    if (window.stockCodesNew && window.stockCodesNew.length > 0) {
+                        // stockCodesNew: ["市场.代码"], 0=sz, 1=sh, 4=bj, 116=hk
+                        const prefixMap = {'0':'sz','1':'sh','4':'bj','116':'hk'};
                         const stocks = [];
-                        for (let i = 1; i < rep.length && stocks.length < 10; i += 3) if(rep[i]) stocks.push({ code: rep[i], percent: parseFloat(rep[i+2] || 0) });
-                        cache[code].holdings = stocks;
+                        for (let sc of window.stockCodesNew) {
+                            const dotIdx = sc.indexOf('.');
+                            if (dotIdx > 0) {
+                                const market = sc.substring(0, dotIdx);
+                                const code = sc.substring(dotIdx + 1);
+                                const prefix = prefixMap[market] || 'sz';
+                                stocks.push({ code: code, symbol: prefix + code });
+                            }
+                        }
+                        if (stocks.length > 0) {
+                            cache[code].holdings = stocks;
+                            cache[code].totalHoldingPct = 100; // stockCodesNew 不含权重，默认等权
+                        }
                     }
                     finish();
                 };
@@ -269,22 +281,23 @@
                     renderRow(code); onDone();
                 });
             } else if (isFittingEnabled && data.holdings && data.holdings.length > 0) {
-                const queryList = data.holdings.map(s => {
-                    let prefix = (s.code.length === 5) ? 'hk' : (/^6/.test(s.code) ? 'sh' : (/^[03]/.test(s.code) ? 'sz' : (/^[48]/.test(s.code) ? 'bj' : 'sh')));
-                    return prefix + s.code;
-                }).join(',');
+                const queryList = data.holdings.map(s => s.symbol).join(',');
                 const script = document.createElement('script');
                 script.src = `https://qt.gtimg.cn/q=${queryList}`; script.charset = 'gbk';
                 script.onload = () => {
                     let total = 0, valid = 0;
+                    const stockCount = data.holdings.length;
                     data.holdings.forEach(stock => {
-                        let prefix = (stock.code.length === 5) ? 'hk' : (/^6/.test(stock.code) ? 'sh' : 'sz'); 
-                        const val = window[`v_${prefix}${stock.code}`];
+                        const val = window[`v_${stock.symbol}`];
                         if (val) {
                             valid++;
                             const p = val.split('~');
                             const curr = parseFloat(p[3]); const prev = parseFloat(p[4]);
-                            if (prev > 0 && curr > 0) total += (stock.percent * ((curr - prev) / prev) * 100) / 100;
+                            if (prev > 0 && curr > 0) {
+                                // stockCodesNew 不含权重，等权平均
+                                const weight = stock.percent || (1 / stockCount) * 100;
+                                total += (weight * ((curr - prev) / prev) * 100) / 100;
+                            }
                         }
                     });
                     try { document.body.removeChild(script); } catch(e){}
